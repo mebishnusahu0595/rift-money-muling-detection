@@ -162,22 +162,60 @@ const GraphViz: React.FC<Props> = ({ data, onNodeClick }) => {
         // Focus mode — highlighted
         { selector: ".highlighted",  style: { opacity: 1 } },
       ],
-      layout: {
-        name: "cose",
-        animate: false,
-        nodeRepulsion: () => repulsion,
-        idealEdgeLength: () => edgeLen,
-        nodeOverlap: 40,
-        gravity: 0.35,
-        numIter: 2500,
-        componentSpacing: 100,
-        coolingFactor: 0.95,
-        nestingFactor: 1.2,
-        padding: 60,
-      } as any,
+      layout: { name: "null" } as any, // positions set manually below
       minZoom: 0.08,
       maxZoom: 5,
     });
+
+    // ── Step 1: cose layout for overall placement ──────────────────────
+    const mainLayout = cy.layout({
+      name: "cose",
+      animate: false,
+      nodeRepulsion: () => repulsion,
+      idealEdgeLength: () => edgeLen,
+      nodeOverlap: 40,
+      gravity: 0.35,
+      numIter: 2500,
+      componentSpacing: 100,
+      coolingFactor: 0.95,
+      nestingFactor: 1.2,
+      padding: 60,
+    } as any);
+
+    // ── Step 2: after cose, re-arrange ring members concentrically ─────
+    // Highest-suspicion node → center; rest evenly on a circle.
+    mainLayout.on("layoutstop", () => {
+      cy.nodes(":parent").forEach((compound) => {
+        const children = compound
+          .children()
+          .sort((a, b) => (b.data("score") as number) - (a.data("score") as number));
+        if (children.length === 0) return;
+
+        const bb = compound.boundingBox({});
+        const cx = (bb.x1 + bb.x2) / 2;
+        const cy_pos = (bb.y1 + bb.y2) / 2;
+
+        // Radius grows with member count but stays compact
+        const radius = Math.max(55, children.length * 18);
+
+        // Most suspicious node at center
+        children[0].position({ x: cx, y: cy_pos });
+
+        // Remaining nodes evenly on a circle
+        const rest = children.slice(1);
+        rest.forEach((node, i) => {
+          const angle = (2 * Math.PI * i) / Math.max(rest.length, 1);
+          node.position({
+            x: cx + radius * Math.cos(angle),
+            y: cy_pos + radius * Math.sin(angle),
+          });
+        });
+      });
+
+      cy.fit(undefined, 50);
+    });
+
+    mainLayout.run();
 
     // ── Zoom → reveal / hide labels ──────────────────────────────────────
     const LABEL_THRESHOLD = 1.3;
