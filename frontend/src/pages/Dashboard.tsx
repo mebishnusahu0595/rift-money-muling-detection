@@ -2,7 +2,6 @@ import React, { useState, useCallback, useRef } from "react";
 import FileUpload from "../components/FileUpload";
 import GraphViz from "../components/GraphViz";
 import RingTable from "../components/RingTable";
-import NodeDetails from "../components/NodeDetails";
 import JsonDownload from "../components/JsonDownload";
 import { useAnalysis } from "../hooks/useAnalysis";
 import type { SuspiciousAccount } from "../types";
@@ -312,8 +311,9 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Right sidebar — suspicious accounts */}
+            {/* Right sidebar — suspicious accounts + detail */}
             <aside className="flex w-64 shrink-0 flex-col border-l border-gray-800 bg-[#10161e] overflow-hidden">
+              {/* Header */}
               <div className="flex shrink-0 items-center justify-between border-b border-gray-800 px-3 py-3">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-yellow-400">
                   <IconWarn />
@@ -324,34 +324,116 @@ const Dashboard: React.FC = () => {
                 </span>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
-                {suspiciousSorted.map((acct) => (
+              {selectedAccount ? (
+                /* ── DETAIL VIEW ── */
+                <div className="flex flex-1 flex-col overflow-y-auto">
+                  {/* Back button */}
                   <button
-                    key={acct.account_id}
-                    onClick={() => handleAccountListClick(acct)}
-                    className={`flex w-full items-center gap-2 border-b border-gray-800/60 px-3 py-2.5 text-left transition-colors hover:bg-gray-800/60 ${
-                      selectedAccount?.account_id === acct.account_id ? "bg-blue-900/30 border-l-2 border-l-blue-500" : ""
-                    }`}
+                    onClick={() => setSelectedAccount(null)}
+                    className="flex shrink-0 items-center gap-1.5 border-b border-gray-800 px-3 py-2 text-[11px] text-gray-400 hover:bg-gray-800/60 hover:text-gray-200"
                   >
-                    <ScoreBadge score={acct.suspicion_score} />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-xs font-semibold text-gray-100">{acct.account_id}</p>
-                      <p className="truncate text-[10px] text-gray-500">
-                        {acct.ring_ids?.[0] ?? acct.ring_id ?? "—"}
-                        {acct.detected_patterns[0] && (
-                          <span className="ml-1 text-blue-400">{acct.detected_patterns[0]}</span>
-                        )}
-                      </p>
-                    </div>
-                    <IconChevron />
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
+                    </svg>
+                    Back to list
                   </button>
-                ))}
-              </div>
 
-              {/* Account detail panel at bottom */}
-              {selectedAccount && (
-                <div className="shrink-0 border-t border-gray-700">
-                  <NodeDetails account={selectedAccount} onClose={() => setSelectedAccount(null)} />
+                  {/* Account ID + score */}
+                  <div className="border-b border-gray-800 px-4 py-3">
+                    <div className="mb-1 flex items-center gap-2">
+                      <ScoreBadge score={selectedAccount.suspicion_score} />
+                      <div>
+                        <p className="font-bold text-sm text-gray-100">{selectedAccount.account_id}</p>
+                        <p className="text-[10px] text-gray-500 capitalize">{selectedAccount.account_type.replace(/_/g, " ")}</p>
+                      </div>
+                    </div>
+                    {/* Score bar */}
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-gray-800">
+                      <div
+                        className={`h-full rounded-full ${selectedAccount.suspicion_score > 70 ? "bg-red-500" : selectedAccount.suspicion_score > 30 ? "bg-yellow-500" : "bg-green-500"}`}
+                        style={{ width: `${selectedAccount.suspicion_score}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Patterns */}
+                  <div className="border-b border-gray-800 px-4 py-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Detected Patterns</p>
+                    {selectedAccount.detected_patterns.length === 0
+                      ? <span className="text-[11px] text-gray-600">None detected</span>
+                      : <div className="flex flex-wrap gap-1.5">
+                          {selectedAccount.detected_patterns.map((p, i) => (
+                            <span key={i} className="rounded-full bg-red-900/40 border border-red-800/50 px-2 py-0.5 text-[10px] font-medium text-red-300">
+                              {p.replace(/_/g, " ")}
+                            </span>
+                          ))}
+                        </div>
+                    }
+                  </div>
+
+                  {/* Ring membership */}
+                  <div className="border-b border-gray-800 px-4 py-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Ring Membership</p>
+                    {(selectedAccount.ring_ids?.length ?? 0) === 0 && !selectedAccount.ring_id
+                      ? <span className="text-[11px] text-gray-600">No ring</span>
+                      : <div className="flex flex-wrap gap-1.5">
+                          {(selectedAccount.ring_ids?.length > 0
+                            ? selectedAccount.ring_ids
+                            : selectedAccount.ring_id ? [selectedAccount.ring_id] : []
+                          ).map((r) => (
+                            <span key={r} className="rounded-full bg-blue-900/40 border border-blue-800/50 px-2 py-0.5 text-[10px] font-medium text-blue-300">{r}</span>
+                          ))}
+                        </div>
+                    }
+                  </div>
+
+                  {/* Transaction stats */}
+                  <div className="px-4 py-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Transaction Summary</p>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                        <span className="text-[11px] text-gray-400">Inflow</span>
+                        <span className="font-bold text-sm text-green-400">₹{selectedAccount.total_inflow.toLocaleString("en-IN")}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                        <span className="text-[11px] text-gray-400">Outflow</span>
+                        <span className="font-bold text-sm text-red-400">₹{selectedAccount.total_outflow.toLocaleString("en-IN")}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                        <span className="text-[11px] text-gray-400">Tx Count</span>
+                        <span className="font-bold text-sm text-gray-100">{selectedAccount.transaction_count}</span>
+                      </div>
+                      <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                        <span className="text-[11px] text-gray-400">Account Type</span>
+                        <span className="font-bold text-sm text-gray-100 capitalize">{selectedAccount.account_type.replace(/_/g, " ")}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                /* ── LIST VIEW ── */
+                <div className="flex-1 overflow-y-auto">
+                  {suspiciousSorted.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-xs text-gray-600">No suspicious accounts</div>
+                  ) : suspiciousSorted.map((acct) => (
+                    <button
+                      key={acct.account_id}
+                      onClick={() => handleAccountListClick(acct)}
+                      className="flex w-full items-center gap-2 border-b border-gray-800/60 px-3 py-2.5 text-left transition-colors hover:bg-gray-800/60"
+                    >
+                      <ScoreBadge score={acct.suspicion_score} />
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-xs font-semibold text-gray-100">{acct.account_id}</p>
+                        <p className="truncate text-[10px] text-gray-500">
+                          {acct.ring_ids?.[0] ?? acct.ring_id ?? "—"}
+                          {acct.detected_patterns[0] && (
+                            <span className="ml-1 text-blue-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
+                          )}
+                        </p>
+                      </div>
+                      <IconChevron />
+                    </button>
+                  ))}
                 </div>
               )}
             </aside>
