@@ -64,6 +64,7 @@ const Dashboard: React.FC = () => {
   const [zoomToNodes, setZoomToNodes] = useState<string[] | undefined>(undefined);
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
+  const [maxNodes, setMaxNodes] = useState(500);
   const lastClickedNodeRef = useRef<string | null>(null);
   const lastClickedRingRef = useRef<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
@@ -127,9 +128,37 @@ const Dashboard: React.FC = () => {
       nodes = nodes.filter((n) => connected.has(n.id));
     }
 
+    // Node limit for large datasets — prioritise suspicious + ring members + their neighbors
+    if (maxNodes > 0 && nodes.length > maxNodes) {
+      // 1. All suspicious / ring-member nodes first
+      const suspicious = nodes.filter((n) => n.suspicion_score > 0);
+      const normal = nodes.filter((n) => n.suspicion_score === 0);
+      let kept = [...suspicious];
+      // 2. Add neighbours of suspicious that are normal
+      if (kept.length < maxNodes) {
+        const keptIds = new Set(kept.map((n) => n.id));
+        const neighborIds = new Set<string>();
+        edges.forEach((e) => {
+          if (keptIds.has(e.source)) neighborIds.add(e.target);
+          if (keptIds.has(e.target)) neighborIds.add(e.source);
+        });
+        const neighbors = normal.filter((n) => neighborIds.has(n.id));
+        kept = [...kept, ...neighbors.slice(0, maxNodes - kept.length)];
+      }
+      // 3. Fill remaining slots with other nodes
+      if (kept.length < maxNodes) {
+        const keptIds = new Set(kept.map((n) => n.id));
+        const rest = normal.filter((n) => !keptIds.has(n.id));
+        kept = [...kept, ...rest.slice(0, maxNodes - kept.length)];
+      }
+      const finalIds = new Set(kept.map((n) => n.id));
+      nodes = kept;
+      edges = edges.filter((e) => finalIds.has(e.source) && finalIds.has(e.target));
+    }
+
     if (nodes === graphData.nodes && edges === graphData.edges) return graphData;
     return { nodes, edges };
-  }, [graphData, result, patternFilter, minAmount]);
+  }, [graphData, result, patternFilter, minAmount, maxNodes]);
 
   const handleNodeClick = useCallback(
     (nodeId: string) => {
@@ -322,6 +351,28 @@ const Dashboard: React.FC = () => {
               className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-xs text-gray-200 focus:outline-none"
               placeholder="0"
             />
+
+            {/* Max visible nodes slider */}
+            {graphData && graphData.nodes.length > 100 && (
+              <>
+                <label className="mb-1 mt-3 block text-[10px] text-gray-400">
+                  Max Visible Nodes
+                </label>
+                <input
+                  type="range"
+                  min={50}
+                  max={Math.max(graphData.nodes.length, 50)}
+                  step={50}
+                  value={Math.min(maxNodes, graphData.nodes.length)}
+                  onChange={(e) => setMaxNodes(Number(e.target.value))}
+                  className="w-full accent-blue-500"
+                />
+                <div className="flex items-center justify-between text-[10px] text-gray-500">
+                  <span>{maxNodes >= graphData.nodes.length ? "All" : maxNodes}</span>
+                  <span>of {graphData.nodes.length}</span>
+                </div>
+              </>
+            )}
           </div>
         )}
 
@@ -403,6 +454,11 @@ const Dashboard: React.FC = () => {
                   <span className="rounded-full bg-blue-900/60 px-2 py-0.5 text-[10px] font-semibold text-blue-300">
                     {result.summary.total_accounts_analyzed} ACCOUNTS
                   </span>
+                  {filteredGraphData && graphData && filteredGraphData.nodes.length < graphData.nodes.length && (
+                    <span className="rounded-full bg-yellow-900/50 px-2 py-0.5 text-[10px] font-semibold text-yellow-300">
+                      {filteredGraphData.nodes.length} / {graphData.nodes.length} visible
+                    </span>
+                  )}
                 </div>
                 <div className="min-h-0 flex-1">
                   {filteredGraphData ? (

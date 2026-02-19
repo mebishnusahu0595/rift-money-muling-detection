@@ -296,24 +296,34 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
         }
       });
 
-      // Run cose layout — nodes are already in cy, positions will spread correctly
+      // Run cose layout — sqrt-scaled so large graphs (500+) stay compact
       const nodeCount = cy.nodes().length;
       const edgeCount = cy.edges().length;
-      // Scale spacing aggressively for large / dense graphs
       const density = edgeCount / Math.max(nodeCount, 1);
-      const repulsion = Math.max(12000, nodeCount * 3000 + density * 2000);
-      const edgeLen   = Math.max(120, nodeCount * 12);
+      const sqrtN = Math.sqrt(nodeCount);
+      // Repulsion: sqrt scaling keeps connected nodes close without overlap
+      const repulsion = nodeCount <= 50
+        ? Math.max(8000, nodeCount * 800)
+        : Math.max(8000, sqrtN * 1800 + density * 400);
+      // Edge length: compact for big graphs, spacious for small
+      const edgeLen = nodeCount <= 50
+        ? Math.max(80, nodeCount * 4)
+        : Math.max(60, sqrtN * 6);
+      // Gravity: pull harder on big graphs to keep clusters tight
+      const gravity = nodeCount <= 100 ? 0.12 : Math.min(0.6, 0.1 + sqrtN * 0.012);
+      // Iterations: more for big graphs to converge
+      const iterations = Math.min(10000, Math.max(3000, nodeCount * 8));
       cy.layout({
         name: "cose",
         animate: false,
         randomize: true,
         nodeRepulsion: () => repulsion,
         idealEdgeLength: () => edgeLen,
-        nodeOverlap: 40,
-        gravity: 0.08,
-        numIter: 6000,
-        componentSpacing: 250,
-        padding: 80,
+        nodeOverlap: 30,
+        gravity,
+        numIter: iterations,
+        componentSpacing: Math.max(60, Math.min(200, sqrtN * 8)),
+        padding: 40,
         nestingFactor: 1.2,
       } as never).run();
 
