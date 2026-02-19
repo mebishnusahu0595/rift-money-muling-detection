@@ -129,7 +129,7 @@ PWIOI/
 
 ### 1. Cycle Detection — Circular Fund Routing
 **Algorithm:** DFS-based simple cycle enumeration  
-**Finds:** Cycles of length 3–5 where all edges occur within a 72-hour window
+**Finds:** Cycles of length 3–5 where all edges occur within a configured time window
 
 | Optimization | Detail |
 |---|---|
@@ -142,7 +142,7 @@ PWIOI/
 
 ### 2. Smurfing Detection — Fan-in / Fan-out
 **Algorithm:** Sliding window with counterparty frequency map  
-**Finds:** Accounts with ≥10 unique counterparties within any 72-hour window
+**Finds:** Accounts with ≥10 unique counterparties within a time window
 
 | Phase | Complexity |
 |---|---|
@@ -326,7 +326,7 @@ Parallel pattern detection (cycles + smurfing + shells run concurrently via `std
 ## ⚠️ Known Limitations
 
 - **In-memory store** — analysis results are lost on server restart (no database persistence)
-- **Single-threaded Crow** — concurrent uploads share one analysis queue; suitable for demo/hackathon use
+- **Single-threaded Crow** — concurrent uploads share one analysis queue; suitable for demo use
 - **Cycle cap** — capped at 5,000 cycles maximum to prevent memory exhaustion on highly-connected graphs
 - **Shell detection** — requires explicit source→sink topology; disconnected subgraphs may reduce recall
 - **Timestamp parsing** — assumes UTC for all timestamps; local timezone offsets are not corrected

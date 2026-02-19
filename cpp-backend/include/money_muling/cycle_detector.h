@@ -3,7 +3,7 @@
 // Cycle Detector – finds circular fund routing (cycles of length 3-5)
 //
 // Uses DFS-based simple cycle enumeration with temporal coherence check
-// (all edge timestamps within a 72-hour window).
+// (all edge timestamps within a configured window).
 //
 // Performance optimisations for large graphs:
 //   • O(1) path-membership via unordered_set (was O(path_len) linear scan)

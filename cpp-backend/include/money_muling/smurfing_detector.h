@@ -2,8 +2,8 @@
 // ============================================================================
 // Smurfing Detector – fan-in / fan-out structuring patterns
 //
-// Fan-in:  receiver with >=10 unique senders within a 72-hour window.
-// Fan-out: sender with >=10 unique receivers within a 72-hour window.
+// Fan-in:  receiver with >=10 unique senders within a configured window.
+// Fan-out: sender with >=10 unique receivers within a configured window.
 //
 // Performance optimisations:
 //   • Uses RedBlackTree for O(log n) time-range queries per account
