@@ -66,6 +66,7 @@ const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling }) => {
         </p>
         <p className="text-xs text-gray-500 mt-1">Max 10 MB</p>
         <input
+          id="csv-input-trigger"
           ref={inputRef}
           type="file"
           accept=".csv"

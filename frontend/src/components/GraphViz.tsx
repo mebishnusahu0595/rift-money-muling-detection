@@ -29,6 +29,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   const [showNormal, setShowNormal] = useState(true);
   const [minScore, setMinScore] = useState(0);
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
+  const [isZoomed, setIsZoomed] = useState(false);
   const focusedRef = useRef<string | null>(null);
   const focusModeRef = useRef(false);
   // always-current callback ref — never stale
@@ -156,11 +157,21 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   // ── zoomTo prop ────────────────────────────────────────────────────────
   useEffect(() => {
     const cy = cyRef.current;
-    if (!cy || !zoomTo || zoomTo.length === 0) return;
+    if (!cy) return;
+    // empty array = zoom out / fit all
+    if (zoomTo && zoomTo.length === 0) {
+      cy.animate({ fit: { eles: cy.elements(":visible"), padding: 40 }, duration: 400 } as never);
+      setIsZoomed(false);
+      return;
+    }
+    if (!zoomTo || zoomTo.length === 0) return;
     const sel = zoomTo.map((id) => `#${CSS.escape(id)}`).join(", ");
     try {
       const nodes = cy.$(sel);
-      if (nodes.length > 0) cy.animate({ fit: { eles: nodes, padding: 80 }, duration: 500 } as never);
+      if (nodes.length > 0) {
+        cy.animate({ fit: { eles: nodes, padding: 100 }, duration: 500 } as never);
+        setIsZoomed(true);
+      }
     } catch { /* ignore bad selectors */ }
   }, [zoomTo]);
 
@@ -221,7 +232,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-800">
+    <div className="flex h-full w-full flex-col overflow-hidden bg-[#0d1117]">
       {/* ── Toolbar ── */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-gray-800 bg-gray-900 px-4 py-2 text-xs">
         <label className="flex cursor-pointer select-none items-center gap-1.5">
@@ -245,7 +256,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
           {focusModeEnabled ? "🔍 Focus ON" : "🔍 Focus Mode"}
         </button>
         <div className="ml-auto flex gap-1.5">
-          <button onClick={() => cyRef.current?.fit(undefined, 30)}
+          <button onClick={() => { cyRef.current?.fit(undefined, 30); setIsZoomed(false); }}
             className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">Fit</button>
           <button onClick={() => cyRef.current?.zoom((cyRef.current?.zoom() ?? 1) * 1.3)}
             className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">+</button>
@@ -255,14 +266,21 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
       </div>
 
       {/* ── Canvas — key forces full remount when data changes ── */}
-      <CytoscapeComponent
-        key={dataKey(data)}
-        elements={[]}
-        stylesheet={stylesheet as never}
-        style={{ width: "100%", flex: 1, minHeight: 420, background: "rgba(15,15,35,0.6)" }}
-        cy={(cy: Core) => handleCyReady(cy)}
-        wheelSensitivity={0.3}
-      />
+      <div className="relative min-h-0 flex-1">
+        {isZoomed && (
+          <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[10px] font-medium text-blue-300 backdrop-blur">
+            🔍 Click same node again to zoom out
+          </div>
+        )}
+        <CytoscapeComponent
+          key={dataKey(data)}
+          elements={[]}
+          stylesheet={stylesheet as never}
+          style={{ width: "100%", height: "100%", minHeight: 300, background: "rgba(13,17,23,0.95)" }}
+          cy={(cy: Core) => handleCyReady(cy)}
+          wheelSensitivity={0.3}
+        />
+      </div>
 
       {/* ── Legend ── */}
       <div className="flex flex-wrap items-center gap-3 border-t border-gray-800 bg-gray-900 px-4 py-1.5 text-xs text-gray-500">

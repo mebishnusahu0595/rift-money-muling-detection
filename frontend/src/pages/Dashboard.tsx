@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import FileUpload from "../components/FileUpload";
 import GraphViz from "../components/GraphViz";
 import RingTable from "../components/RingTable";
@@ -7,25 +7,81 @@ import JsonDownload from "../components/JsonDownload";
 import { useAnalysis } from "../hooks/useAnalysis";
 import type { SuspiciousAccount } from "../types";
 
+// ── tiny icon helpers ────────────────────────────────────────────────────────
+const IconGlobe = () => (
+  <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/>
+  </svg>
+);
+const IconWarn = () => (
+  <svg className="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+  </svg>
+);
+const IconRing = () => (
+  <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 24 24">
+    <circle cx="12" cy="12" r="5"/>
+  </svg>
+);
+const IconBolt = () => (
+  <svg className="h-5 w-5 text-green-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+  </svg>
+);
+const IconUpload = () => (
+  <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4l4 4"/>
+  </svg>
+);
+const IconChevron = () => (
+  <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
+  </svg>
+);
+const IconNetwork = () => (
+  <svg className="h-4 w-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+    <circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/>
+    <path d="M7 12h5m2-5.5L12 12m2 5.5L12 12"/>
+  </svg>
+);
+
+// ── score badge ──────────────────────────────────────────────────────────────
+function ScoreBadge({ score }: { score: number }) {
+  const bg = score > 70 ? "bg-red-600" : score > 40 ? "bg-yellow-600" : "bg-green-700";
+  const label = score > 70 ? "HIGH" : score > 40 ? "MED" : "LOW";
+  return (
+    <div className={`flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-lg ${bg}`}>
+      <span className="text-sm font-bold leading-none text-white">{score}</span>
+      <span className="text-[9px] font-semibold text-white/80">{label}</span>
+    </div>
+  );
+}
+
 const Dashboard: React.FC = () => {
   const { uploading, polling, analysisId, result, graphData, error, upload, downloadJson } =
     useAnalysis();
 
   const [selectedAccount, setSelectedAccount] = useState<SuspiciousAccount | null>(null);
   const [zoomToNodes, setZoomToNodes] = useState<string[] | undefined>(undefined);
+  const [minAmount, setMinAmount] = useState(0);
+  const [patternFilter, setPatternFilter] = useState("all");
+  const lastClickedNodeRef = useRef<string | null>(null);
 
   const handleNodeClick = useCallback(
     (nodeId: string) => {
       if (!result) return;
-      // zoom graph to this node
-      setZoomToNodes([nodeId]);
-      // First check suspicious accounts (have full detail)
-      const suspicious = result.suspicious_accounts.find((a) => a.account_id === nodeId);
-      if (suspicious) {
-        setSelectedAccount(suspicious);
-        return;
+
+      // Toggle zoom: same node → zoom out; different node → zoom in
+      if (lastClickedNodeRef.current === nodeId) {
+        lastClickedNodeRef.current = null;
+        setZoomToNodes([]); // empty = fit all
+      } else {
+        lastClickedNodeRef.current = nodeId;
+        setZoomToNodes([nodeId]);
       }
-      // Fall back to graph node data for clean/normal accounts
+
+      const suspicious = result.suspicious_accounts.find((a) => a.account_id === nodeId);
+      if (suspicious) { setSelectedAccount(suspicious); return; }
       const graphNode = graphData?.nodes.find((n) => n.id === nodeId);
       if (graphNode) {
         setSelectedAccount({
@@ -50,159 +106,258 @@ const Dashboard: React.FC = () => {
       if (!result) return;
       const ring = result.fraud_rings.find((r) => r.ring_id === ringId);
       if (ring && ring.member_accounts.length > 0) {
-        // zoom graph to all ring members
+        lastClickedNodeRef.current = null;
         setZoomToNodes([...ring.member_accounts]);
-        const acct =
-          result.suspicious_accounts.find((a) => a.account_id === ring.member_accounts[0]) ?? null;
+        const acct = result.suspicious_accounts.find((a) => a.account_id === ring.member_accounts[0]) ?? null;
         setSelectedAccount(acct);
       }
     },
     [result]
   );
 
+  const handleAccountListClick = useCallback(
+    (acct: SuspiciousAccount) => {
+      setSelectedAccount(acct);
+      lastClickedNodeRef.current = acct.account_id;
+      setZoomToNodes([acct.account_id]);
+    },
+    []
+  );
+
   const isAnalysing = uploading || polling;
 
+  const filteredRings = result?.fraud_rings.filter(
+    (r) => patternFilter === "all" || r.pattern_type === patternFilter
+  ) ?? [];
+
+  const patternTypes = result
+    ? Array.from(new Set(result.fraud_rings.map((r) => r.pattern_type)))
+    : [];
+
+  const suspiciousSorted = result
+    ? [...result.suspicious_accounts].sort((a, b) => b.suspicion_score - a.suspicion_score)
+    : [];
+
   return (
-    <div className="flex min-h-screen flex-col bg-gray-950 text-gray-100">
-      {/* Header */}
-      <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur">
-        <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-red-600 text-lg font-bold">
-              M
-            </div>
-            <div>
-              <h1 className="text-lg font-bold tracking-tight">Money Muling Detector</h1>
-              <p className="text-xs text-gray-400">Financial Forensics Engine &middot; RIFT 2026</p>
-            </div>
+    <div className="flex h-screen overflow-hidden bg-[#0d1117] text-gray-100">
+      {/* ── LEFT SIDEBAR ─────────────────────────────────────────── */}
+      <aside className="flex w-56 shrink-0 flex-col border-r border-gray-800 bg-[#10161e]">
+        {/* Logo */}
+        <div className="flex items-center gap-2.5 border-b border-gray-800 px-4 py-4">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
+            <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+            </svg>
           </div>
+          <div>
+            <p className="text-xs font-bold leading-none text-white">Financial Forensics</p>
+            <p className="text-[10px] text-gray-500">Money Muling v1.0</p>
+          </div>
+        </div>
+
+        {/* Upload area */}
+        <div className="p-3">
+          <FileUpload onUpload={upload} uploading={uploading} polling={polling} />
+        </div>
+
+        {/* Status */}
+        {isAnalysing && (
+          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-blue-950/60 px-3 py-2 text-xs text-blue-300">
+            <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+            </svg>
+            Analysing…
+          </div>
+        )}
+
+        {result && (
+          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-green-950/60 px-3 py-2 text-xs text-green-400">
+            <span className="h-1.5 w-1.5 rounded-full bg-green-400"/>
+            Complete
+          </div>
+        )}
+
+        {/* Filters */}
+        {result && (
+          <div className="flex-1 overflow-y-auto px-3 pb-3">
+            <p className="mb-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+              <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M11 12h2M13 16h-2"/>
+              </svg>
+              Filters
+            </p>
+
+            <label className="mb-1 block text-[10px] text-gray-400">Pattern Type</label>
+            <select
+              value={patternFilter}
+              onChange={(e) => setPatternFilter(e.target.value)}
+              className="mb-3 w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-xs text-gray-200 focus:outline-none"
+            >
+              <option value="all">All Patterns</option>
+              {patternTypes.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+
+            <label className="mb-1 block text-[10px] text-gray-400">Min Transaction Amount (₹)</label>
+            <input
+              type="number"
+              min={0}
+              value={minAmount}
+              onChange={(e) => setMinAmount(Number(e.target.value))}
+              className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-xs text-gray-200 focus:outline-none"
+              placeholder="0"
+            />
+          </div>
+        )}
+
+        {/* Footer */}
+        <div className="border-t border-gray-800 px-3 py-2 text-[9px] text-gray-600">
+          RIFT 2026 · Financial Forensics
+        </div>
+      </aside>
+
+      {/* ── MAIN AREA ─────────────────────────────────────────────── */}
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
+        {/* Top bar */}
+        <header className="flex shrink-0 items-center justify-between border-b border-gray-800 bg-[#10161e] px-5 py-3">
           <div className="flex items-center gap-3">
+            <span className="text-sm font-semibold text-gray-100">Financial Forensics Engine</span>
+            {result && (
+              <span className="flex items-center gap-1 rounded-full bg-green-900/50 px-2 py-0.5 text-[10px] font-medium text-green-400">
+                <span className="h-1.5 w-1.5 rounded-full bg-green-400"/>Complete
+              </span>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
             {result && analysisId && (
               <JsonDownload analysisId={analysisId} onDownload={downloadJson} />
             )}
+            <button
+              onClick={() => document.getElementById("csv-input-trigger")?.click()}
+              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors"
+            >
+              <IconUpload /> Upload CSV
+            </button>
           </div>
-        </div>
-      </header>
+        </header>
 
-      {/* Main content */}
-      <main className="mx-auto flex w-full max-w-screen-2xl flex-1 flex-col gap-3 p-4">
-        {/* Upload section — shown when no result yet */}
-        {!result && (
-          <section className="mx-auto w-full max-w-xl">
-            <FileUpload onUpload={upload} uploading={uploading} polling={polling} />
-            {polling && (
-              <div className="mt-4 flex items-center justify-center gap-2 text-sm text-blue-400">
-                <svg
-                  className="h-4 w-4 animate-spin"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                >
-                  <circle
-                    className="opacity-25"
-                    cx="12"
-                    cy="12"
-                    r="10"
-                    stroke="currentColor"
-                    strokeWidth="4"
-                  />
-                  <path
-                    className="opacity-75"
-                    fill="currentColor"
-                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
-                  />
-                </svg>
-                Analysing transactions…
-              </div>
-            )}
-          </section>
+        {/* Error */}
+        {error && (
+          <div className="mx-4 mt-3 rounded-lg border border-red-800 bg-red-900/30 px-4 py-2 text-xs text-red-300">
+            {error}
+          </div>
         )}
 
-        {error && (
-          <div className="rounded-lg border border-red-800 bg-red-900/30 px-4 py-3 text-sm text-red-300">
-            {error}
+        {/* No result — centered upload prompt */}
+        {!result && !isAnalysing && (
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 text-gray-500">
+            <svg className="h-12 w-12 text-gray-700" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6M5 21h14a2 2 0 002-2V7l-5-5H5a2 2 0 00-2 2v15a2 2 0 002 2z"/>
+            </svg>
+            <p className="text-sm">Upload a CSV from the sidebar and click <strong className="text-gray-300">Run Detection</strong></p>
           </div>
         )}
 
         {/* Results */}
         {result && (
-          <div className="flex min-h-0 flex-1 flex-col gap-3">
-            {/* Summary stats */}
-            <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-              {[
-                [
-                  "Total Accounts",
-                  result.summary.total_accounts_analyzed.toLocaleString(),
-                  "text-gray-100",
-                ],
-                [
-                  "Suspicious",
-                  result.summary.suspicious_accounts_flagged.toLocaleString(),
-                  "text-yellow-400",
-                ],
-                [
-                  "Fraud Rings",
-                  result.summary.fraud_rings_detected.toLocaleString(),
-                  "text-red-400",
-                ],
-                [
-                  "Total Volume",
-                  "₹" + result.summary.total_transaction_volume.toLocaleString("en-IN"),
-                  "text-green-400",
-                ],
-              ].map(([label, value, color]) => (
-                <div
-                  key={label}
-                  className="rounded-xl border border-gray-800 bg-gray-900/60 p-4"
-                >
-                  <p className="text-xs uppercase tracking-wider text-gray-400">{label}</p>
-                  <p className={`mt-1 text-2xl font-bold ${color}`}>{value}</p>
+          <div className="flex min-h-0 flex-1 overflow-hidden">
+            {/* Center column */}
+            <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4 gap-3">
+              {/* Stats row */}
+              <div className="grid shrink-0 grid-cols-4 gap-3">
+                {([
+                  ["ACCOUNTS ANALYZED", result.summary.total_accounts_analyzed, "text-white", <IconGlobe key="g"/>],
+                  ["SUSPICIOUS FLAGGED", result.summary.suspicious_accounts_flagged, "text-yellow-400", <IconWarn key="w"/>],
+                  ["FRAUD RINGS DETECTED", result.summary.fraud_rings_detected, "text-red-400", <IconRing key="r"/>],
+                  ["PROCESSING TIME", `${result.summary.processing_time_seconds.toFixed(2)}s`, "text-green-400", <IconBolt key="b"/>],
+                ] as [string, string | number, string, React.ReactNode][]).map(([label, value, color, icon]) => (
+                  <div key={label} className="rounded-xl border border-gray-800 bg-[#161c26] px-4 py-3">
+                    <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+                      <span>{label}</span>{icon}
+                    </div>
+                    <p className={`text-2xl font-bold ${color}`}>{value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Transaction Flow Map (graph) */}
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-[#161c26]">
+                <div className="flex shrink-0 items-center gap-3 border-b border-gray-800 px-4 py-2.5">
+                  <IconNetwork />
+                  <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">Transaction Flow Map</span>
+                  <span className="rounded-full bg-blue-900/60 px-2 py-0.5 text-[10px] font-semibold text-blue-300">
+                    {result.summary.total_accounts_analyzed} ACCOUNTS
+                  </span>
                 </div>
-              ))}
-            </section>
-
-        {/* Graph + sidebar side by side — fills remaining viewport height */}
-            <section className="flex flex-1 gap-4" style={{ minHeight: 0, height: "calc(100vh - 280px)" }}>
-              {/* Graph */}
-              <div className="flex min-w-0 flex-1 flex-col">
-                {graphData ? (
-                  <GraphViz data={graphData} onNodeClick={handleNodeClick} zoomTo={zoomToNodes} />
-                ) : (
-                  <div className="flex flex-1 items-center justify-center rounded-2xl bg-gray-900/60 text-gray-500">
-                    Loading graph…
-                  </div>
-                )}
+                <div className="min-h-0 flex-1">
+                  {graphData ? (
+                    <GraphViz data={graphData} onNodeClick={handleNodeClick} zoomTo={zoomToNodes} />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-gray-600">Loading graph…</div>
+                  )}
+                </div>
               </div>
 
-              {/* Sidebar — account details or placeholder */}
-              <div className="w-72 flex-shrink-0 overflow-y-auto">
-                {selectedAccount ? (
-                  <NodeDetails
-                    account={selectedAccount}
-                    onClose={() => setSelectedAccount(null)}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-center text-xs text-gray-500">
-                    Click a node to view details
-                  </div>
-                )}
+              {/* Ring table */}
+              <div className="shrink-0">
+                <div className="mb-2 flex items-center gap-2">
+                  <svg className="h-3.5 w-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                  </svg>
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Network Graph</span>
+                </div>
+                <RingTable rings={filteredRings} onRingClick={handleRingClick} />
               </div>
-            </section>
+            </div>
 
-            {/* Ring table */}
-            <section className="flex-shrink-0">
-              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
-                Detected Fraud Rings
-              </h2>
-              <RingTable rings={result.fraud_rings} onRingClick={handleRingClick} />
-            </section>
+            {/* Right sidebar — suspicious accounts */}
+            <aside className="flex w-64 shrink-0 flex-col border-l border-gray-800 bg-[#10161e] overflow-hidden">
+              <div className="flex shrink-0 items-center justify-between border-b border-gray-800 px-3 py-3">
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-yellow-400">
+                  <IconWarn />
+                  <span className="uppercase tracking-wider">Suspicious Accounts</span>
+                </div>
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-yellow-500 text-[10px] font-bold text-black">
+                  {suspiciousSorted.length}
+                </span>
+              </div>
+
+              <div className="flex-1 overflow-y-auto">
+                {suspiciousSorted.map((acct) => (
+                  <button
+                    key={acct.account_id}
+                    onClick={() => handleAccountListClick(acct)}
+                    className={`flex w-full items-center gap-2 border-b border-gray-800/60 px-3 py-2.5 text-left transition-colors hover:bg-gray-800/60 ${
+                      selectedAccount?.account_id === acct.account_id ? "bg-blue-900/30 border-l-2 border-l-blue-500" : ""
+                    }`}
+                  >
+                    <ScoreBadge score={acct.suspicion_score} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-xs font-semibold text-gray-100">{acct.account_id}</p>
+                      <p className="truncate text-[10px] text-gray-500">
+                        {acct.ring_ids?.[0] ?? acct.ring_id ?? "—"}
+                        {acct.detected_patterns[0] && (
+                          <span className="ml-1 text-blue-400">{acct.detected_patterns[0]}</span>
+                        )}
+                      </p>
+                    </div>
+                    <IconChevron />
+                  </button>
+                ))}
+              </div>
+
+              {/* Account detail panel at bottom */}
+              {selectedAccount && (
+                <div className="shrink-0 border-t border-gray-700">
+                  <NodeDetails account={selectedAccount} onClose={() => setSelectedAccount(null)} />
+                </div>
+              )}
+            </aside>
           </div>
         )}
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-gray-800 py-4 text-center text-xs text-gray-600">
-        Money Muling Detector &middot; RIFT 2026 Hackathon &middot; Financial Forensics Engine
-      </footer>
+      </div>
     </div>
   );
 };
