@@ -1,17 +1,9 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import cytoscape from "cytoscape";
+import CytoscapeComponent from "react-cytoscapejs";
+import type { Core, EventObject } from "cytoscape";
+import { useMemo, useRef, useCallback, useState, useEffect } from "react";
 import type { GraphData, GraphNode } from "../types";
 
 // ── helpers ────────────────────────────────────────────────────────────────
-
-const _nodeColor = (n: GraphNode) => {
-  if (n.suspicion_score > 70) return "#ef4444";
-  if (n.suspicion_score > 30) return "#f59e0b";
-  return "#6b7280";
-};
-
-// Continuous sizing: 18px (score 0) → 42px (score 100)
-const _nodeSize = (n: GraphNode) => Math.round(18 + (n.suspicion_score / 100) * 24);
 
 interface Props {
   data: GraphData;
@@ -25,256 +17,114 @@ const RING_COLORS = [
 
 // ── component ──────────────────────────────────────────────────────────────
 
-const GraphViz: React.FC<Props> = ({ data, onNodeClick }) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const cyRef = useRef<cytoscape.Core | null>(null);
-  const focusedRef = useRef<string | null>(null);
-
+export default function GraphViz({ data, onNodeClick }: Props) {
+  const cyRef = useRef<Core | null>(null);
   const [showNormal, setShowNormal] = useState(true);
   const [minScore, setMinScore] = useState(0);
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
+  const focusedRef = useRef<string | null>(null);
 
-  // Build ring → colour map
-  const ringColorMap = useMemo(() => {
-    const map: Record<string, string> = {};
-    let idx = 0;
-    data.nodes.forEach((n) =>
-      n.ring_ids.forEach((r) => {
-        if (!map[r]) { map[r] = RING_COLORS[idx % RING_COLORS.length]; idx++; }
-      })
-    );
-    return map;
-  }, [data]);
+  const elements = useMemo(() => {
+    const nodeEls = data.nodes.map((n: GraphNode) => {
+      const score = n.suspicion_score;
+      let color = "#64748b";
+      let size = 20;
+      if (score > 70) { color = "#ef4444"; size = 45; }
+      else if (score > 0) { color = "#f59e0b"; size = 32; }
 
-  // ── Build / rebuild Cytoscape instance ──────────────────────────────────
-  useEffect(() => {
-    if (!containerRef.current) return;
+      const ringColor =
+        n.ring_ids.length > 0
+          ? RING_COLORS[parseInt(n.ring_ids[0].replace(/\D/g, ""), 10) % RING_COLORS.length]
+          : undefined;
 
-    const elements: cytoscape.ElementDefinition[] = [];
-
-    // Compound parent nodes — one per ring (visual cluster container)
-    Object.keys(ringColorMap).forEach((rid) => {
-      elements.push({
-        data: { id: `__ring__${rid}`, label: rid, ringColor: ringColorMap[rid] },
-        group: "nodes",
-      });
-    });
-
-    // Member nodes
-    data.nodes.forEach((n) => {
-      const borderColor = n.ring_ids.length > 0 ? ringColorMap[n.ring_ids[0]] : "transparent";
-      const parent = n.ring_ids.length > 0 ? `__ring__${n.ring_ids[0]}` : undefined;
-      elements.push({
+      return {
         data: {
           id: n.id,
           label: n.id,
-          score: n.suspicion_score,
-          bgColor: _nodeColor(n),
-          borderColor,
-          size: _nodeSize(n),
-          ring_ids: n.ring_ids,
-          isNormal: n.suspicion_score === 0,
-          ...(parent ? { parent } : {}),
+          score,
+          color,
+          size,
+          ringColor: ringColor ?? color,
+          inflow: n.total_inflow,
+          outflow: n.total_outflow,
+          isNormal: score === 0,
         },
-        group: "nodes",
-      });
+      };
     });
 
-    // Edges
-    const maxAmt = Math.max(...data.edges.map((e) => e.amount), 1);
-    data.edges.forEach((e, i) => {
-      elements.push({
-        data: {
-          id: `e${i}`,
-          source: e.source,
-          target: e.target,
-          amount: e.amount,
-          width: Math.max(1, (e.amount / maxAmt) * 5),
+    const edgeEls = data.edges.map((e, i) => ({
+      data: {
+        id: `e${i}`,
+        source: e.source,
+        target: e.target,
+        amount: e.amount,
+        width: Math.max(1, Math.min(6, e.amount / 2000)),
+      },
+    }));
+
+    return [...nodeEls, ...edgeEls];
+  }, [data]);
+
+  const stylesheet = useMemo(
+    () => [
+      {
+        selector: "node",
+        style: {
+          label: "data(label)",
+          "background-color": "data(color)" as string,
+          width: "data(size)" as unknown as number,
+          height: "data(size)" as unknown as number,
+          "font-size": "8px",
+          color: "#e2e8f0",
+          "text-valign": "bottom" as const,
+          "text-halign": "center" as const,
+          "text-margin-y": 4,
+          "border-width": 2,
+          "border-color": "data(ringColor)" as string,
+          "text-outline-width": 1,
+          "text-outline-color": "#0f0f23",
         },
-        group: "edges",
-      });
-    });
-
-    // Layout params scaled to node count
-    const nodeCount = data.nodes.length;
-    const repulsion = Math.max(12000, nodeCount * 2500);
-    const edgeLen = Math.max(130, nodeCount * 18);
-
-    const cy = cytoscape({
-      container: containerRef.current,
-      elements,
-      style: [
-        // Compound ring containers
-        {
-          selector: ":parent",
-          style: {
-            "background-opacity": 0.07,
-            "background-color": "data(ringColor)" as any,
-            "border-color": "data(ringColor)" as any,
-            "border-width": 2,
-            "border-opacity": 0.55,
-            label: "data(label)",
-            "font-size": "10px",
-            color: "#9ca3af",
-            "text-valign": "top",
-            "text-halign": "center",
-            "text-margin-y": -6,
-            "text-outline-width": 0,
-            shape: "roundrectangle",
-            "padding-top": "20px" as any,
-            "padding-bottom": "20px" as any,
-            "padding-left": "20px" as any,
-            "padding-right": "20px" as any,
-          },
+      },
+      {
+        selector: "edge",
+        style: {
+          width: "data(width)" as unknown as number,
+          "line-color": "#475569",
+          "target-arrow-color": "#475569",
+          "target-arrow-shape": "triangle" as const,
+          "curve-style": "bezier" as const,
+          opacity: 0.6,
         },
-        // Regular member nodes — labels hidden by default, shown on zoom
-        {
-          selector: "node:childless",
-          style: {
-            "background-color": "data(bgColor)" as any,
-            label: "data(label)",
-            "font-size": "0px",
-            color: "#e5e7eb",
-            "text-outline-width": 2,
-            "text-outline-color": "#111827",
-            "text-valign": "bottom",
-            "text-margin-y": 4,
-            width: "data(size)",
-            height: "data(size)",
-            "border-width": 3,
-            "border-color": "data(borderColor)" as any,
-          },
+      },
+      {
+        selector: "node:active, node:selected",
+        style: {
+          "border-width": 4,
+          "border-color": "#6366f1",
+          "overlay-opacity": 0,
         },
-        // Edges
-        {
-          selector: "edge",
-          style: {
-            width: "data(width)" as any,
-            "line-color": "#374151",
-            "target-arrow-color": "#374151",
-            "target-arrow-shape": "triangle",
-            "curve-style": "bezier",
-            opacity: 0.65,
-          },
-        },
-        // Focus mode — dimmed
-        { selector: ".dimmed",       style: { opacity: 0.08 } },
-        // Focus mode — highlighted
-        { selector: ".highlighted",  style: { opacity: 1 } },
-      ],
-      layout: { name: "null" } as any, // positions set manually below
-      minZoom: 0.08,
-      maxZoom: 5,
-    });
+      },
+      { selector: ".dimmed",      style: { opacity: 0.08 } },
+      { selector: ".highlighted", style: { opacity: 1 } },
+    ],
+    []
+  );
 
-    // ── Step 1: cose layout for overall placement ──────────────────────
-    const mainLayout = cy.layout({
-      name: "cose",
-      animate: false,
-      nodeRepulsion: () => repulsion,
-      idealEdgeLength: () => edgeLen,
-      nodeOverlap: 40,
-      gravity: 0.35,
-      numIter: 2500,
-      componentSpacing: 100,
-      coolingFactor: 0.95,
-      nestingFactor: 1.2,
-      padding: 60,
-    } as any);
-
-    // ── Step 2: after cose, re-arrange ring members concentrically ─────
-    // Highest-suspicion node → center; rest evenly on a circle.
-    mainLayout.on("layoutstop", () => {
-      cy.nodes(":parent").forEach((compound) => {
-        const children = compound
-          .children()
-          .sort((a, b) => (b.data("score") as number) - (a.data("score") as number));
-        if (children.length === 0) return;
-
-        const bb = compound.boundingBox({});
-        const cx = (bb.x1 + bb.x2) / 2;
-        const cy_pos = (bb.y1 + bb.y2) / 2;
-
-        // Radius grows with member count but stays compact
-        const radius = Math.max(55, children.length * 18);
-
-        // Most suspicious node at center
-        children[0].position({ x: cx, y: cy_pos });
-
-        // Remaining nodes evenly on a circle
-        const rest = children.slice(1);
-        rest.forEach((node, i) => {
-          const angle = (2 * Math.PI * i) / Math.max(rest.length, 1);
-          node.position({
-            x: cx + radius * Math.cos(angle),
-            y: cy_pos + radius * Math.sin(angle),
-          });
-        });
-      });
-
-      cy.fit(undefined, 50);
-    });
-
-    mainLayout.run();
-
-    // ── Zoom → reveal / hide labels ──────────────────────────────────────
-    const LABEL_THRESHOLD = 1.3;
-    const updateLabels = (zoom: number) => {
-      cy.nodes("node:childless").style("font-size", zoom >= LABEL_THRESHOLD ? "10px" : "0px");
-    };
-    cy.on("zoom", () => updateLabels(cy.zoom()));
-
-    // ── Node tap ─────────────────────────────────────────────────────────
-    cy.on("tap", "node:childless", (evt) => {
-      const id: string = evt.target.id();
-
-      // Focus mode logic
-      const fm = (cy as any).__focusModeEnabled;
-      if (fm) {
-        if (focusedRef.current === id) {
-          cy.elements().removeClass("dimmed highlighted");
-          focusedRef.current = null;
-        } else {
-          focusedRef.current = id;
-          const hood = cy.getElementById(id).closedNeighborhood();
-          cy.elements().addClass("dimmed").removeClass("highlighted");
-          hood.removeClass("dimmed").addClass("highlighted");
-        }
-      }
-      onNodeClick(id);
-    });
-
-    // Background tap → clear focus
-    cy.on("tap", (evt) => {
-      if (evt.target === cy) {
-        cy.elements().removeClass("dimmed highlighted");
-        focusedRef.current = null;
-      }
-    });
-
-    cyRef.current = cy;
-    (cy as any).__focusModeEnabled = false;
-
-    return () => { cy.destroy(); cyRef.current = null; };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data, ringColorMap]);
-
-  // ── Sync focus mode flag into cy instance ────────────────────────────
+  // Sync focus mode flag so tap handler can read it without stale closure
   useEffect(() => {
     if (!cyRef.current) return;
-    (cyRef.current as any).__focusModeEnabled = focusModeEnabled;
+    (cyRef.current as any).__focusMode = focusModeEnabled;
     if (!focusModeEnabled) {
       cyRef.current.elements().removeClass("dimmed highlighted");
       focusedRef.current = null;
     }
   }, [focusModeEnabled]);
 
-  // ── Reactive filters (show/hide without re-layout) ───────────────────
+  // Reactive filter — hide/show without re-layout
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-
-    const all = cy.nodes("node:childless");
+    const all = cy.nodes();
     const toHide = all.filter((n) => {
       const isNormal: boolean = n.data("isNormal");
       const score: number = n.data("score");
@@ -284,8 +134,6 @@ const GraphViz: React.FC<Props> = ({ data, onNodeClick }) => {
     (toHide as any).hide();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (all.not(toHide) as any).show();
-
-    // Hide edges whose endpoint is hidden
     const hiddenNodes = cy.nodes(":hidden");
     const edgesToHide = cy.edges().filter(
       (e) => hiddenNodes.has(e.source()) || hiddenNodes.has(e.target())
@@ -296,73 +144,104 @@ const GraphViz: React.FC<Props> = ({ data, onNodeClick }) => {
     (cy.edges().not(edgesToHide) as any).show();
   }, [showNormal, minScore]);
 
-  const handleFit = useCallback(() => cyRef.current?.fit(undefined, 40), []);
+  const handleCyReady = useCallback(
+    (cy: Core) => {
+      cyRef.current = cy;
+      (cy as any).__focusMode = focusModeEnabled;
+
+      cy.on("tap", "node", (e: EventObject) => {
+        const id: string = e.target.id();
+        const fm = (cy as any).__focusMode;
+        if (fm) {
+          if (focusedRef.current === id) {
+            cy.elements().removeClass("dimmed highlighted");
+            focusedRef.current = null;
+          } else {
+            focusedRef.current = id;
+            const hood = cy.getElementById(id).closedNeighborhood();
+            cy.elements().addClass("dimmed").removeClass("highlighted");
+            hood.removeClass("dimmed").addClass("highlighted");
+          }
+        }
+        onNodeClick(id);
+      });
+
+      cy.on("tap", (e: EventObject) => {
+        if (e.target === cy) {
+          cy.elements().removeClass("dimmed highlighted");
+          focusedRef.current = null;
+        }
+      });
+
+      const nodeCount = data.nodes.length;
+      cy.layout({
+        name: "cose",
+        animate: true,
+        animationDuration: 600,
+        nodeRepulsion: () => Math.max(12000, nodeCount * 2500),
+        idealEdgeLength: () => Math.max(130, nodeCount * 18),
+        nodeOverlap: 40,
+        gravity: 0.35,
+        numIter: 2000,
+        componentSpacing: 100,
+        padding: 50,
+      } as never).run();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [onNodeClick, data.nodes.length]
+  );
 
   return (
-    <div className="flex h-full w-full flex-col overflow-hidden rounded-xl">
-
-      {/* ── Filter toolbar ── */}
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-gray-800 bg-gray-900/90 px-4 py-2 text-xs">
+    <div className="flex h-full w-full flex-col overflow-hidden rounded-2xl border border-gray-800">
+      {/* ── Toolbar ── */}
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 border-b border-gray-800 bg-gray-900 px-4 py-2 text-xs">
         <label className="flex cursor-pointer select-none items-center gap-1.5">
-          <input
-            type="checkbox"
-            className="accent-blue-500"
-            checked={showNormal}
-            onChange={(e) => setShowNormal(e.target.checked)}
-          />
+          <input type="checkbox" className="accent-blue-500" checked={showNormal}
+            onChange={(e) => setShowNormal(e.target.checked)} />
           <span className="text-gray-300">Show Normal</span>
         </label>
-
         <label className="flex select-none items-center gap-2">
           <span className="text-gray-400">Min Score</span>
-          <input
-            type="range"
-            min={0} max={100} step={5}
-            value={minScore}
+          <input type="range" min={0} max={100} step={5} value={minScore}
             onChange={(e) => setMinScore(Number(e.target.value))}
-            className="w-24 accent-yellow-400"
-          />
+            className="w-24 accent-yellow-400" />
           <span className="w-6 font-mono text-yellow-300">{minScore}</span>
         </label>
-
         <button
           onClick={() => setFocusModeEnabled((v) => !v)}
           className={`rounded px-2 py-0.5 font-semibold transition-colors ${
-            focusModeEnabled
-              ? "bg-indigo-600 text-white"
-              : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+            focusModeEnabled ? "bg-indigo-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
           }`}
         >
           {focusModeEnabled ? "🔍 Focus ON" : "🔍 Focus Mode"}
         </button>
-
-        <button
-          onClick={handleFit}
-          className="ml-auto rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600"
-        >
-          Fit
-        </button>
+        <div className="ml-auto flex gap-1.5">
+          <button onClick={() => cyRef.current?.fit(undefined, 30)}
+            className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">Fit</button>
+          <button onClick={() => cyRef.current?.zoom((cyRef.current?.zoom() ?? 1) * 1.3)}
+            className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">+</button>
+          <button onClick={() => cyRef.current?.zoom((cyRef.current?.zoom() ?? 1) / 1.3)}
+            className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">−</button>
+        </div>
       </div>
 
-      {/* ── Graph canvas ── */}
-      <div ref={containerRef} className="flex-1 bg-gray-900/60" />
+      {/* ── Canvas ── */}
+      <CytoscapeComponent
+        elements={elements}
+        stylesheet={stylesheet as never}
+        style={{ width: "100%", flex: 1, minHeight: 420, background: "rgba(15,15,35,0.6)" }}
+        cy={(cy: Core) => handleCyReady(cy)}
+        wheelSensitivity={0.3}
+      />
 
       {/* ── Legend ── */}
-      <div className="flex flex-wrap items-center gap-3 border-t border-gray-800 bg-gray-900/80 px-4 py-1.5 text-xs text-gray-500">
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" /> High (&gt;70)
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-amber-400" /> Medium (30–70)
-        </span>
-        <span className="flex items-center gap-1">
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-gray-500" /> Normal
-        </span>
-        <span className="ml-auto italic text-gray-600">Zoom in for labels · Ring boxes = fraud clusters</span>
+      <div className="flex flex-wrap items-center gap-3 border-t border-gray-800 bg-gray-900 px-4 py-1.5 text-xs text-gray-500">
+        <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-gray-500" /> Normal</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-amber-400" /> Suspicious</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> High Risk</span>
+        <span className="ml-auto italic text-gray-600">Zoom in for labels · Click node to focus</span>
       </div>
     </div>
   );
-};
-
-export default GraphViz;
+}
 

@@ -155,33 +155,26 @@ const Dashboard: React.FC = () => {
               ))}
             </section>
 
-            {/* Graph + Details */}
-            <section className="grid flex-1 grid-cols-1 gap-6 lg:grid-cols-3">
-              {/* Graph */}
-              <div className="lg:col-span-2" style={{ minHeight: "450px" }}>
-                {graphData ? (
-                  <GraphViz data={graphData} onNodeClick={handleNodeClick} />
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-xl bg-gray-900/60 text-gray-500">
-                    Loading graph…
-                  </div>
-                )}
-              </div>
-
-              {/* Node details sidebar */}
-              <div className="lg:col-span-1">
-                {selectedAccount ? (
-                  <NodeDetails
-                    account={selectedAccount}
-                    onClose={() => setSelectedAccount(null)}
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-6 text-center text-sm text-gray-500">
-                    Click a node in the graph or a row in the table to view account details.
-                  </div>
-                )}
-              </div>
+            {/* Graph — full width */}
+            <section style={{ minHeight: "520px" }} className="flex flex-col">
+              {graphData ? (
+                <GraphViz data={graphData} onNodeClick={handleNodeClick} />
+              ) : (
+                <div className="flex flex-1 items-center justify-center rounded-2xl bg-gray-900/60 text-gray-500">
+                  Loading graph…
+                </div>
+              )}
             </section>
+
+            {/* Node details — full width below graph */}
+            {selectedAccount && (
+              <section>
+                <NodeDetails
+                  account={selectedAccount}
+                  onClose={() => setSelectedAccount(null)}
+                />
+              </section>
+            )}
 
             {/* Ring table */}
             <section>
