@@ -484,20 +484,54 @@ const Dashboard: React.FC = () => {
                     }
                   </div>
 
-                  {/* Ring membership */}
+                  {/* Fraud Ring Summary Table */}
                   <div className="border-b border-gray-800 px-4 py-3">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Ring Membership</p>
-                    {(selectedAccount.ring_ids?.length ?? 0) === 0 && !selectedAccount.ring_id
-                      ? <span className="text-[11px] text-gray-600">No ring</span>
-                      : <div className="flex flex-wrap gap-1.5">
-                          {(selectedAccount.ring_ids?.length > 0
-                            ? selectedAccount.ring_ids
-                            : selectedAccount.ring_id ? [selectedAccount.ring_id] : []
-                          ).map((r) => (
-                            <span key={r} className="rounded-full bg-blue-900/40 border border-blue-800/50 px-2 py-0.5 text-[10px] font-medium text-blue-300">{r}</span>
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Fraud Ring Summary</p>
+                    {(() => {
+                      const ids = selectedAccount.ring_ids?.length > 0
+                        ? selectedAccount.ring_ids
+                        : selectedAccount.ring_id ? [selectedAccount.ring_id] : [];
+                      const memberRings = result!.fraud_rings.filter((r) => ids.includes(r.ring_id));
+                      if (memberRings.length === 0)
+                        return <span className="text-[11px] text-gray-600">No ring membership</span>;
+                      return (
+                        <div className="overflow-x-auto rounded-lg border border-gray-700">
+                          <table className="min-w-full text-[10px] text-gray-300">
+                            <thead className="border-b border-gray-700 bg-gray-900/80 text-[9px] uppercase tracking-wider text-gray-500">
+                              <tr>
+                                <th className="px-2 py-1.5 text-left">Ring ID</th>
+                                <th className="px-2 py-1.5 text-left">Pattern</th>
+                                <th className="px-2 py-1.5 text-center">Members</th>
+                                <th className="px-2 py-1.5 text-center">Risk</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-gray-800">
+                              {memberRings.map((ring) => (
+                                <tr key={`${ring.ring_id}_${ring.pattern_type}`} className="hover:bg-gray-800/40">
+                                  <td className="whitespace-nowrap px-2 py-1.5 font-mono text-blue-400">{ring.ring_id}</td>
+                                  <td className="whitespace-nowrap px-2 py-1.5 capitalize">{ring.pattern_type.replace(/_/g, " ")}</td>
+                                  <td className="px-2 py-1.5 text-center">{ring.member_accounts.length}</td>
+                                  <td className="px-2 py-1.5 text-center">
+                                    <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
+                                      ring.risk_score > 70 ? "bg-red-600 text-red-100" : ring.risk_score > 40 ? "bg-yellow-600 text-yellow-100" : "bg-green-700 text-green-100"
+                                    }`}>{ring.risk_score}</span>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                          {/* Member accounts list per ring */}
+                          {memberRings.map((ring) => (
+                            <div key={`accts_${ring.ring_id}`} className="border-t border-gray-700/60 px-2 py-1.5">
+                              <p className="text-[9px] font-semibold text-gray-500">{ring.ring_id} Accounts</p>
+                              <p className="mt-0.5 text-[10px] font-mono leading-relaxed text-gray-400">
+                                {ring.member_accounts.join(", ")}
+                              </p>
+                            </div>
                           ))}
                         </div>
-                    }
+                      );
+                    })()}
                   </div>
 
                   {/* Transaction stats */}
