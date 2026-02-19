@@ -1,4 +1,4 @@
-# Python
+# ── Python ──────────────────────────────────────────────────────────────────
 __pycache__/
 *.py[cod]
 *$py.class
@@ -9,31 +9,49 @@ env/
 .env
 *.egg-info/
 dist/
-build/
 .pytest_cache/
 .mypy_cache/
 
-# Node
+# ── C++ Build Artifacts ──────────────────────────────────────────────────────
+cpp-backend/build/
+cpp-backend/*.o
+cpp-backend/*.a
+cpp-backend/*.out
+*.dSYM/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# ── Node / React / Vite ─────────────────────────────────────────────────────
 node_modules/
-dist/
+frontend/dist/
+frontend/.vite/
 .env
 .env.local
 .env.production
+.env.development
 
-# IDE
+# ── IDE / Editor ─────────────────────────────────────────────────────────────
 .vscode/
 .idea/
 *.swp
 *.swo
+*.suo
+*.user
 
-# OS
+# ── OS ───────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Logs
+# ── Logs ─────────────────────────────────────────────────────────────────────
 *.log
 npm-debug.log*
+yarn-error.log
 
-# Test artifacts
+# ── Misc ─────────────────────────────────────────────────────────────────────
 /tmp/
 *.csv.bak
+shadcn-extension.json

@@ -63,7 +63,7 @@ export function useAnalysis() {
         setState((s) => ({ ...s, uploading: false, polling: true, analysisId: id }));
 
         // Start polling
-        pollingRef.current = setInterval(async () => {
+        pollingRef.current = setInterval(async () => {  // 400ms fast polling
           try {
             const { data: status } = await axios.get<AnalysisStatusResponse>(
               `${API_BASE}/api/v1/analysis/${id}`
@@ -81,12 +81,16 @@ export function useAnalysis() {
               } catch {
                 /* graph data optional */
               }
-              setState((s) => ({
-                ...s,
-                polling: false,
-                result: status.result!,
-                graphData: gd,
-              }));
+              // First: stop the loader (light update — lets rAF tick the final time)
+              setState((s) => ({ ...s, polling: false }));
+              // Then: defer the heavy data update so the timer renders before big re-render
+              setTimeout(() => {
+                setState((s) => ({
+                  ...s,
+                  result: status.result!,
+                  graphData: gd,
+                }));
+              }, 50);
             } else if (status.status === "error") {
               stopPolling();
               setState((s) => ({
@@ -103,7 +107,7 @@ export function useAnalysis() {
               error: "Lost connection to server.",
             }));
           }
-        }, 1500);
+        }, 400);
       } catch (err: any) {
         setState((s) => ({
           ...s,

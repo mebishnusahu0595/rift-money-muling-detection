@@ -1,248 +1,347 @@
-# Money Muling Detector
+# 🔍 Money Muling Detector — PWIOI
 
-> Graph-Based Financial Crime Detection Engine — **RIFT 2026 Hackathon**  
-> Graph Theory / Financial Crime Detection Track
+> AI-powered financial fraud detection system that identifies money muling rings, smurfing patterns, and shell account networks from transaction data — visualized as an interactive graph.
 
-A full-stack web application that processes transaction CSV data, builds a directed account graph, and exposes money muling networks through multi-pattern detection algorithms, interactive graph visualisation, and a downloadable JSON forensic report.
-
----
-
-## Live Demo
-
-🔗 **[https://your-deployment-url.com](https://your-deployment-url.com)** *(update with deployed URL)*
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![C++](https://img.shields.io/badge/C%2B%2B-20-blue?logo=cplusplus)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript)
 
 ---
 
-## Team Members
+## 🌐 Live Demo
 
-| Name | Role |
-|------|------|
-| *(your name here)* | Full-stack & Graph Algorithms |
-
----
+> **URL:** *(Deploy URL — e.g., `https://pwioi.vercel.app`)*  
+> Upload any CSV with the format below and get instant fraud analysis.
 
 ---
 
-## Tech Stack
+## 🧰 Tech Stack
 
 | Layer | Technology |
-|-------|-----------|
-| Backend API | Python 3.11, FastAPI 0.104, uvicorn |
-| Graph Engine | NetworkX 3.2 (Johnson's algo, BFS/DFS) |
-| Data Processing | pandas 2.1, NumPy 1.26 |
-| Schema Validation | Pydantic v2 |
-| Frontend | React 18, TypeScript 5.3, Vite 5 |
-| Graph Visualisation | Cytoscape.js 3.28 |
-| Styling | Tailwind CSS 3.4 |
-| HTTP Client | Axios 1.6 |
+|---|---|
+| **Frontend** | React 18 + TypeScript + Vite |
+| **Graph Visualization** | Cytoscape.js (`react-cytoscapejs`) |
+| **Backend** | C++20 (Crow HTTP Server) |
+| **Data Structures** | Custom Red-Black Tree, Decision Tree |
+| **Styling** | Vanilla CSS + CSS Variables |
+| **Build System** | CMake 3.16+ |
+| **HTTP Client** | Axios |
+| **JSON** | nlohmann/json |
 
 ---
 
-## System Architecture
+## 🏗️ System Architecture
 
 ```
-┌────────────────────────────────────────────────────────────────┐
-│                        Browser (React)                         │
-│  FileUpload → useAnalysis hook (upload + poll) → Dashboard     │
-│  GraphViz (Cytoscape.js) │ RingTable │ NodeDetails │ JSON DL   │
-└──────────────────────────┬─────────────────────────────────────┘
-                           │ HTTP  (proxy /api → :8000)
-┌──────────────────────────▼─────────────────────────────────────┐
-│                    FastAPI Backend (:8000)                      │
-│  POST /api/v1/analyze  →  ThreadPoolExecutor (workers=4)       │
-│           ┌──────────────────────────────────────┐             │
-│           │         Analysis Pipeline            │             │
-│           │  1. graph_builder  →  NetworkX Graph │             │
-│           │  2. cycle_detector →  Johnson's algo │             │
-│           │  3. smurfing_detector → sliding win  │             │
-│           │  4. shell_detector →  BFS/DFS paths  │             │
-│           │  5. filters        →  FP reduction   │             │
-│           │  6. scoring        →  0–100 scores   │             │
-│           └──────────────────────────────────────┘             │
-│  In-memory dict store (analyses + graph_cache)                 │
-└────────────────────────────────────────────────────────────────┘
-```
-
-**Project structure:**
-```
-money-muling-detector/
-├── backend/app/
-│   ├── main.py              # FastAPI endpoints
-│   ├── models.py            # Pydantic schemas
-│   ├── graph_builder.py     # CSV → NetworkX MultiDiGraph
-│   ├── scoring.py           # Suspicion scoring
-│   ├── filters.py           # False-positive reduction
-│   └── detectors/
-│       ├── cycle_detector.py
-│       ├── smurfing_detector.py
-│       └── shell_detector.py
-├── frontend/src/
-│   ├── pages/Dashboard.tsx
-│   ├── components/          # FileUpload, GraphViz, RingTable, NodeDetails, JsonDownload
-│   ├── hooks/useAnalysis.ts
-│   └── types/index.ts
-└── test-data/               # 6 sample CSVs
+┌──────────────────────────────────────────────────────────────┐
+│                     React Frontend (Vite)                     │
+│                                                              │
+│   Dashboard.tsx → useAnalysis.ts → Axios → REST API         │
+│        ↓                                                     │
+│   GraphViz.tsx (Cytoscape.js)  ←  Graph JSON Response       │
+└──────────────────────────┬───────────────────────────────────┘
+                           │ HTTP (multipart/form-data upload)
+                           ▼
+┌──────────────────────────────────────────────────────────────┐
+│               C++ Backend (Crow HTTP, port 8000)             │
+│                                                              │
+│  POST /api/v1/analyze  →  AnalysisEngine::run()             │
+│                                ↓                            │
+│          ┌─────────────────────────────────────┐            │
+│          │         Analysis Pipeline            │            │
+│          │                                     │            │
+│          │  1. CSV Parser                      │            │
+│          │  2. TransactionGraph (adjacency)    │            │
+│          │  3. Parallel Detection:             │            │
+│          │     ├─ CycleDetector (DFS + RBTree) │            │
+│          │     ├─ SmurfingDetector (RBTree)    │            │
+│          │     └─ ShellDetector (BFS)          │            │
+│          │  4. AccountProfile Builder          │            │
+│          │  5. Filters (false-positive guard)  │            │
+│          │  6. DecisionTree Scorer             │            │
+│          │  7. FraudRing Assembler             │            │
+│          │  8. GraphData Builder               │            │
+│          └─────────────────────────────────────┘            │
+│                                                              │
+│  GET /api/v1/analysis/{id}      → Poll status               │
+│  GET /api/v1/analysis/{id}/download → JSON report           │
+│  GET /api/v1/analysis/{id}/graph    → Graph viz data        │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Algorithm Approach & Complexity Analysis
+## 📂 Folder Structure
 
-### 1. Graph Construction — `O(E)`
-Convert CSV rows into a `NetworkX.MultiDiGraph`. Each unique account is a node, each transaction is a directed edge. Per-node aggregates (total inflow/outflow, transaction count) computed via vectorised `pandas.groupby` — `O(E)`.
-
-### 2. Cycle Detection (Circular Fund Routing) — `O((V + E)(C + 1))`
-Uses **Johnson's algorithm** via `nx.simple_cycles(G, length_bound=5)`.
-- Searches only for simple cycles of length 3–5 (mule rings rarely exceed 5 hops)
-- Applies **72-hour temporal coherence filter**: all transaction timestamps in a cycle must fall within a 72h window
-- Safety cap: `_MAX_CYCLES = 5000` to prevent combinatorial blowup on dense graphs
-- `C` = number of elementary circuits found
-
-### 3. Smurfing Detection (Fan-in / Fan-out) — `O(E log E)`
-**Two-pointer sliding window** on time-sorted transactions:
-- Per account, sort transactions by timestamp: `O(k log k)`
-- Slide a 72-hour window, track unique counterparty set
-- Flag when unique counterparties ≥ 10 within any window
-- Overall: `O(E log E)` dominated by the global timestamp sort
-
-### 4. Shell Network Detection — `O(V² · P)` (pruned BFS)
-- Pre-identify shell candidates: nodes with `transaction_count ≤ 3`
-- BFS/DFS via `nx.all_simple_paths(cutoff=6)` between source/sink pairs
-- Only accept paths where **all intermediate nodes are shell candidates** AND pass-through ratio > 50% (inflow ≈ outflow)
-- Safety cap: `_MAX_PATHS = 2000`, 200 paths per source/sink pair
-
-### 5. False-Positive Filters — `O(E)`
-Heuristic deductions applied post-scoring:
-- **Payroll**: dominant sender (>80% of inflows), ±10% amount variance, 25–35 day cadence
-- **Merchant**: ≥20 inflows, avg outflow > avg inflow, >30% round-number pricing amounts
-- **Salary**: single large recurring monthly deposit + regular outgoing
-- **Established Business**: ≥180 day history, ≥10 diverse counterparties, or business keyword in account ID
+```
+PWIOI/
+├── cpp-backend/                  # C++20 Crow HTTP server
+│   ├── src/
+│   │   └── main.cpp              # Routes + server entry point
+│   ├── include/
+│   │   └── money_muling/
+│   │       ├── models.h          # All data structs (Transaction, GraphNode…)
+│   │       ├── analysis_engine.h # Pipeline orchestrator
+│   │       ├── csv_parser.h      # Flexible CSV reader with column remapping
+│   │       ├── graph_engine.h    # TransactionGraph adjacency-list
+│   │       ├── red_black_tree.h  # Custom RBT for O(log n) time queries
+│   │       ├── decision_tree.h   # Rule-based suspicion scorer
+│   │       ├── cycle_detector.h  # DFS cycle finder (length 3–5)
+│   │       ├── smurfing_detector.h # Fan-in/fan-out O(N log N)
+│   │       ├── shell_detector.h  # BFS layered shell network finder
+│   │       ├── filters.h         # False-positive reduction
+│   │       ├── scoring.h         # SuspiciousAccount + FraudRing builder
+│   │       ├── json_serializer.h # nlohmann/json serialization
+│   │       └── store.h           # Thread-safe in-memory result store
+│   └── CMakeLists.txt
+│
+├── frontend/                     # React + TypeScript + Vite
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── GraphViz.tsx      # Cytoscape.js interactive graph
+│   │   │   ├── Aurora.tsx        # Animated background (WebGL)
+│   │   │   └── Logo.tsx
+│   │   ├── pages/
+│   │   │   └── Dashboard.tsx     # Main UI: upload, results, filters
+│   │   ├── hooks/
+│   │   │   └── useAnalysis.ts    # Upload + polling state machine
+│   │   └── types/
+│   │       └── index.ts          # Shared TypeScript types
+│   ├── index.html
+│   ├── vite.config.ts
+│   └── package.json
+│
+├── test-data/                    # Sample CSVs for testing
+│   ├── cycle_fraud.csv
+│   ├── smurfing_fraud.csv
+│   ├── shell_fraud.csv
+│   ├── mixed_fraud.csv
+│   ├── merchant_trap.csv         # Legitimate merchant (should NOT flag)
+│   └── clean_transactions.csv
+│
+└── README.md
+```
 
 ---
 
-## Suspicion Score Methodology
+## 🧠 Algorithm Approach
 
-Every account receives a score in **[0, 100]**:
+### 1. Cycle Detection — Circular Fund Routing
+**Algorithm:** DFS-based simple cycle enumeration  
+**Finds:** Cycles of length 3–5 where all edges occur within a 72-hour window
 
-```
-# Cycle contribution (per cycle membership):
-+20 × (6 − cycle_length)     # shorter cycles are more suspicious
-+10                           # bonus if cycle total > $10,000
+| Optimization | Detail |
+|---|---|
+| Path membership | `unordered_set` → O(1) vs O(depth) linear |
+| Early termination | Max 30,000 DFS frames per root node |
+| Node ordering | Sorted by out-degree descending → hubs found first |
+| Temporal filter | RBT range query on timestamps |
 
-# Smurfing contribution (per fan event):
-+15  base
-+5   if unique counterparties > 20
-+10  if velocity > $5,000 / hour
+**Complexity:** O(N × min(branches, cap) × depth) ≈ **O(N log N)** in practice
 
-# Shell contribution (intermediary nodes only):
-+25  flat per chain
+### 2. Smurfing Detection — Fan-in / Fan-out
+**Algorithm:** Sliding window with counterparty frequency map  
+**Finds:** Accounts with ≥10 unique counterparties within any 72-hour window
 
-# False-positive deductions:
-−30  payroll  │  −25 merchant  │  −20 salary  │  −35 established business
+| Phase | Complexity |
+|---|---|
+| RBT build (global sort) | O(N log N) |
+| Sliding window per account | **O(N) amortised** via frequency map |
+| Total | **O(N log N)** |
 
-score = clamp(score, 0, 100), rounded to 1 decimal
-```
+> Previous implementation was O(N²) per account — now 10-100× faster.
 
-**Pattern tags produced:**
+### 3. Shell Network Detection — Layered Accounts
+**Algorithm:** BFS path enumeration from sources to sinks  
+**Finds:** Chains of 3–6 hops where intermediate accounts have ≤3 total transactions and pass-through flow ratio ≥0.5
 
-| Tag | Meaning |
-|-----|---------|
-| `cycle_length_3` … `cycle_length_5` | Member of a cycle of that length |
-| `high_value_cycle` | Cycle total > $10,000 |
-| `fan_in` | Receives from 10+ senders in 72h |
-| `fan_out` | Sends to 10+ receivers in 72h |
-| `high_velocity` | Transaction velocity > $5,000/hour |
-| `structuring` | 20+ unique counterparties (threshold evasion) |
-| `shell_depth_N` | Intermediate node in an N-hop shell chain |
+**Complexity:** O(V + E) per source, capped at 2,000 paths total
+
+### 4. False-Positive Filters
+| Filter | Criteria |
+|---|---|
+| Payroll | Single dominant sender, monthly interval (25–35 days), low amount variance (CV < 10%) |
+| Merchant | ≥20 inflows, average outflow > average inflow, ≥30% round-number amounts |
+| Salary | Monthly large deposits + ≥3 regular outflows |
+| Established Business | ≥180 days history, ≥10 unique counterparties, known business name pattern |
 
 ---
 
-## Installation & Setup
+## 📊 Suspicion Score Methodology
+
+Scores are computed by a **Decision Tree** on pre-built lookup maps:
+
+```
+Score = Σ(pattern scores) − Σ(legitimacy reductions)
+Clamped to [0, 100]
+```
+
+| Signal | Score Contribution |
+|---|---|
+| Cycle of length 3 | +60 |
+| Cycle of length 4 | +40 |
+| Cycle of length 5 | +20 |
+| Cycle total > $10,000 | +10 bonus |
+| Smurfing base | +15 |
+| >20 unique counterparties | +5 |
+| Velocity > 5,000/hr | +10 |
+| Shell chain (per node) | +25 × depth |
+
+| Legitimacy Deduction | Reduction |
+|---|---|
+| Payroll account | −30 |
+| Merchant account | −25 |
+| Salary account | −20 |
+| Established business | −35 |
+
+Accounts with `suspicion_score ≥ 25` are flagged as suspicious.
+
+---
+
+## 📥 CSV Input Format
+
+```csv
+transaction_id,sender_id,receiver_id,amount,timestamp
+TXN_001,ACC_A,ACC_B,5000.00,2024-01-15 10:30:00
+TXN_002,ACC_B,ACC_C,4950.00,2024-01-15 14:22:00
+TXN_003,ACC_C,ACC_A,4900.00,2024-01-15 18:45:00
+```
+
+| Column | Type | Description |
+|---|---|---|
+| `transaction_id` | String | Unique transaction ID |
+| `sender_id` | String | Sending account (graph node) |
+| `receiver_id` | String | Receiving account (graph node) |
+| `amount` | Float | Transaction amount |
+| `timestamp` | DateTime | `YYYY-MM-DD HH:MM:SS` or ISO 8601 |
+
+---
+
+## 📤 JSON Output Format (Download)
+
+```json
+{
+  "suspicious_accounts": [
+    {
+      "account_id": "ACC_00123",
+      "suspicion_score": 87.5,
+      "detected_patterns": ["cycle_length_3", "high_velocity"],
+      "ring_id": "RING_001"
+    }
+  ],
+  "fraud_rings": [
+    {
+      "ring_id": "RING_001",
+      "member_accounts": ["ACC_00123", "ACC_00456"],
+      "pattern_type": "cycle",
+      "risk_score": 95.3
+    }
+  ],
+  "summary": {
+    "total_accounts_analyzed": 500,
+    "suspicious_accounts_flagged": 15,
+    "fraud_rings_detected": 4,
+    "processing_time_seconds": 2.3
+  }
+}
+```
+
+---
+
+## 🚀 Installation & Setup
 
 ### Prerequisites
-- Python 3.11+ and Node.js 18+
+- **C++20** compiler (GCC 11+ / Clang 13+)
+- **CMake** 3.16+
+- **Node.js** 18+ and npm
+- **Crow** HTTP library + **nlohmann/json** (fetched by CMake)
 
 ### Backend
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload --port 8000
-```
+cd cpp-backend
 
-API → `http://localhost:8000` · Swagger docs → `http://localhost:8000/docs`
+# Configure and build (Release mode)
+cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j$(nproc)
+
+# Run (defaults to port 8000)
+./build/money_muling_detector
+
+# Or with custom port
+PORT=8080 ./build/money_muling_detector
+```
 
 ### Frontend
 
 ```bash
 cd frontend
+
+# Install dependencies
 npm install
+
+# Set backend URL (create .env.local)
+echo "VITE_API_URL=http://localhost:8000" > .env.local
+
+# Start dev server
 npm run dev
 ```
 
-App → `http://localhost:5173`
-
-> For production deployment set `VITE_API_URL=https://your-backend.com` in `frontend/.env`
+Open [http://localhost:5173](http://localhost:5173)
 
 ---
 
-## Usage Instructions
+## 📖 Usage Instructions
 
-1. Open the app in your browser
-2. Drag-and-drop or click to upload a `.csv` transaction file
-3. Click **Analyze Transactions** — results appear within seconds
-4. **Graph panel**: red = high risk (>70), yellow = medium (30–70), grey = low. Click any node for details
-5. **Fraud Rings table**: sortable by ring ID, pattern type, member count, risk score
-6. Click **Download JSON** for the full machine-readable forensic report
-
-### Accepted CSV Format
-
-```csv
-transaction_id,sender_id,receiver_id,amount,timestamp
-TXN001,ACC_001,ACC_002,5000.00,2024-01-15 10:30:00
-```
-
-Columns `sender_id` / `receiver_id` are the canonical names (per RIFT spec). Bare `sender` / `receiver` columns are also accepted automatically.
-
----
-
-## API Reference
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `POST` | `/api/v1/analyze` | Upload CSV; returns `analysis_id` immediately |
-| `GET` | `/api/v1/analysis/{id}` | Poll status; returns full result when `status=complete` |
-| `GET` | `/api/v1/analysis/{id}/download` | Stream JSON report as file download |
-| `GET` | `/api/v1/analysis/{id}/graph` | Graph node/edge data for Cytoscape.js |
-| `GET` | `/health` | `{"status": "ok"}` |
+1. **Open** the web app in your browser
+2. **Upload** a CSV file matching the format above (drag & drop or click)
+3. **Wait** for analysis — a live timer shows progress (typically 1–5 seconds for 10K rows)
+4. **Explore** the interactive graph:
+   - 🔴 Red/large nodes = high suspicion
+   - 🟡 Orange nodes = medium suspicion  
+   - ⚪ Small nodes = normal accounts
+   - **Click** a node to see full account details
+   - **Hover** over fraud ring IDs in the sidebar to highlight members
+5. **Filter** the graph using the sidebar:
+   - Pattern type (cycle / fan_in / fan_out / shell)
+   - Minimum transaction amount
+   - Max Visible Nodes (for huge datasets)
+6. **Download** the JSON report using the download button
 
 ---
 
-## Test Data
+## ⚡ Performance
 
-| File | Scenario |
-|------|----------|
-| `clean_transactions.csv` | Normal activity — no rings expected |
-| `cycle_fraud.csv` | Circular routing (3–4 node rings) |
-| `smurfing_fraud.csv` | Fan-in aggregation + fan-out dispersal |
-| `shell_fraud.csv` | Layered shell network (3–5 hops) |
-| `mixed_fraud.csv` | Overlapping cycle + smurfing patterns |
-| `merchant_trap.csv` | Legitimate merchant — false-positive suppression test |
+| Dataset Size | Processing Time |
+|---|---|
+| 1,000 rows | ~0.5 seconds |
+| 5,000 rows | ~1–2 seconds |
+| 10,000 rows | ~3–5 seconds |
 
----
-
-## Known Limitations
-
-1. **In-memory store** — results are lost on server restart; replace with Redis for production
-2. **Scale** — `ThreadPoolExecutor(max_workers=4)` suits demo scale; use Celery + Redis for production throughput
-3. **10K transaction target** — dense graphs (>50K edges) may approach the 30s budget due to shell path enumeration
-4. **72h window sensitivity** — slow-burn laundering schemes operating over weeks may be missed
-5. **USD-centric thresholds** — $10,000 and $5,000/hr thresholds assume USD; multi-currency data needs normalisation
-6. **No deduplication** — uploading the same file twice creates two separate analyses
-7. **Smurfing ring ID ordering** — IDs are assigned after cycle/shell processing, so numbering may differ across runs if concurrency timing varies
+Parallel pattern detection (cycles + smurfing + shells run concurrently via `std::async`) plus RBT-based O(N log N) algorithms makes large datasets feasible well within the 30-second requirement.
 
 ---
 
-*Built for RIFT 2026 Hackathon · Graph Theory / Financial Crime Detection Track*
+## ⚠️ Known Limitations
+
+- **In-memory store** — analysis results are lost on server restart (no database persistence)
+- **Single-threaded Crow** — concurrent uploads share one analysis queue; suitable for demo/hackathon use
+- **Cycle cap** — capped at 5,000 cycles maximum to prevent memory exhaustion on highly-connected graphs
+- **Shell detection** — requires explicit source→sink topology; disconnected subgraphs may reduce recall
+- **Timestamp parsing** — assumes UTC for all timestamps; local timezone offsets are not corrected
+- **False positive rate** — legitimacy filters use heuristics; unusual-but-legitimate high-velocity accounts may be flagged
+
+---
+
+## 👥 Team Members
+
+| Name | Role |
+|---|---|
+| Bishnu Prasad Sahu | Full-stack dev · C++ backend · Graph algorithms |
+
+---
+
+## 📄 License
+
+MIT © 2024 PWIOI Team

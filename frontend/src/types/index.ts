@@ -17,7 +17,7 @@ export interface SuspiciousAccount {
 export interface FraudRing {
   ring_id: string;
   member_accounts: string[];
-  pattern_type: "cycle" | "smurfing" | "shell";
+  pattern_type: "cycle" | "smurfing" | "shell" | "fan_in" | "fan_out";
   risk_score: number;
 }
 

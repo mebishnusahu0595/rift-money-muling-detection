@@ -11,38 +11,38 @@ import type { SuspiciousAccount } from "../types";
 // ── tiny icon helpers ────────────────────────────────────────────────────────
 const IconGlobe = () => (
   <svg className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18M12 3a15 15 0 000 18"/>
+    <circle cx="12" cy="12" r="9" /><path d="M3.6 9h16.8M3.6 15h16.8M12 3a15 15 0 010 18M12 3a15 15 0 000 18" />
   </svg>
 );
 const IconWarn = () => (
   <svg className="h-5 w-5 text-yellow-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
   </svg>
 );
 const IconRing = () => (
   <svg className="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 24 24">
-    <circle cx="12" cy="12" r="5"/>
+    <circle cx="12" cy="12" r="5" />
   </svg>
 );
 const IconBolt = () => (
   <svg className="h-5 w-5 text-green-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
   </svg>
 );
 const IconUpload = () => (
   <svg className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4l4 4"/>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1M12 12V4m0 0L8 8m4-4l4 4" />
   </svg>
 );
 const IconChevron = () => (
   <svg className="h-3 w-3 shrink-0" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7"/>
+    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
   </svg>
 );
 const IconNetwork = () => (
   <svg className="h-4 w-4 text-red-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-    <circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/>
-    <path d="M7 12h5m2-5.5L12 12m2 5.5L12 12"/>
+    <circle cx="5" cy="12" r="2" /><circle cx="19" cy="5" r="2" /><circle cx="19" cy="19" r="2" />
+    <path d="M7 12h5m2-5.5L12 12m2 5.5L12 12" />
   </svg>
 );
 
@@ -67,7 +67,8 @@ const Dashboard: React.FC = () => {
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
   const [maxNodes, setMaxNodes] = useState(0);
-  const [sliderMaxNodes, setSliderMaxNodes] = useState(0);
+  const [maxNodesEnabled, setMaxNodesEnabled] = useState(false);
+  const [sliderMaxNodes, setSliderMaxNodes] = useState(2000);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickedNodeRef = useRef<string | null>(null);
   const lastClickedRingRef = useRef<string | null>(null);
@@ -95,27 +96,24 @@ const Dashboard: React.FC = () => {
     if (result && showUploadScreen) setShowUploadScreen(false);
   }, [result, showUploadScreen]);
 
-  /* ── Timer: count while analysing ── */
+  /* ── Timer: count while analysing (setInterval — rAF freezes under heavy CPU) ── */
   useEffect(() => {
-    let intervalId: ReturnType<typeof setInterval> | null = null;
     if (isAnalysing) {
       if (!analysisStartRef.current) {
         analysisStartRef.current = Date.now();
         setElapsedMs(0);
         setClientElapsedTime(null);
       }
-      intervalId = setInterval(() => {
+      const timer = setInterval(() => {
         setElapsedMs(Date.now() - analysisStartRef.current!);
-      }, 10);
+      }, 50);  // 50ms tick — smooth enough, low cost
+      return () => clearInterval(timer);
     } else if (analysisStartRef.current) {
       const finalTime = Date.now() - analysisStartRef.current;
       setClientElapsedTime(finalTime);
       setElapsedMs(finalTime);
       analysisStartRef.current = null;
     }
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-    };
   }, [isAnalysing]);
 
   useEffect(() => {
@@ -169,13 +167,14 @@ const Dashboard: React.FC = () => {
     }
 
     // Node limit for large datasets — prioritise suspicious + ring members + their neighbors
-    if (maxNodes > 0 && nodes.length > maxNodes) {
+    const effectiveMaxNodes = maxNodesEnabled ? maxNodes : 0;
+    if (effectiveMaxNodes > 0 && nodes.length > effectiveMaxNodes) {
       // 1. All suspicious / ring-member nodes first
       const suspicious = nodes.filter((n) => n.suspicion_score > 0);
       const normal = nodes.filter((n) => n.suspicion_score === 0);
       let kept = [...suspicious];
       // 2. Add neighbours of suspicious that are normal
-      if (kept.length < maxNodes) {
+      if (kept.length < effectiveMaxNodes) {
         const keptIds = new Set(kept.map((n) => n.id));
         const neighborIds = new Set<string>();
         edges.forEach((e) => {
@@ -183,13 +182,13 @@ const Dashboard: React.FC = () => {
           if (keptIds.has(e.target)) neighborIds.add(e.source);
         });
         const neighbors = normal.filter((n) => neighborIds.has(n.id));
-        kept = [...kept, ...neighbors.slice(0, maxNodes - kept.length)];
+        kept = [...kept, ...neighbors.slice(0, effectiveMaxNodes - kept.length)];
       }
       // 3. Fill remaining slots with other nodes
-      if (kept.length < maxNodes) {
+      if (kept.length < effectiveMaxNodes) {
         const keptIds = new Set(kept.map((n) => n.id));
         const rest = normal.filter((n) => !keptIds.has(n.id));
-        kept = [...kept, ...rest.slice(0, maxNodes - kept.length)];
+        kept = [...kept, ...rest.slice(0, effectiveMaxNodes - kept.length)];
       }
       const finalIds = new Set(kept.map((n) => n.id));
       nodes = kept;
@@ -198,7 +197,11 @@ const Dashboard: React.FC = () => {
 
     if (nodes === graphData.nodes && edges === graphData.edges) return graphData;
     return { nodes, edges };
-  }, [graphData, result, patternFilter, minAmount, maxNodes]);
+  }, [graphData, result, patternFilter, minAmount, maxNodes, maxNodesEnabled]);
+
+  // Stable graph key — only changes on new upload (new analysisId)
+  // This prevents filter changes from triggering a full Cytoscape remount
+  const graphKey = analysisId ?? "no-data";
 
   const handleNodeClick = useCallback(
     (nodeId: string) => {
@@ -336,8 +339,8 @@ const Dashboard: React.FC = () => {
         {isAnalysing && (
           <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-red-950/40 px-3 py-2 text-xs text-red-300">
             <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
             </svg>
             Analysing…
           </div>
@@ -345,7 +348,7 @@ const Dashboard: React.FC = () => {
 
         {result && (
           <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-green-950/60 px-3 py-2 text-xs text-green-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400"/>
+            <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
             Complete
           </div>
         )}
@@ -355,7 +358,7 @@ const Dashboard: React.FC = () => {
           <div className="flex-1 overflow-y-auto px-3 pb-3">
             <p className="mb-2 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-widest text-gray-500">
               <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M11 12h2M13 16h-2"/>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h18M7 8h10M11 12h2M13 16h-2" />
               </svg>
               Filters
             </p>
@@ -391,22 +394,25 @@ const Dashboard: React.FC = () => {
                     <input
                       type="checkbox"
                       className="accent-red-500 h-3 w-3"
-                      checked={sliderMaxNodes <= 0 || sliderMaxNodes >= graphData.nodes.length}
+                      checked={maxNodesEnabled}
                       onChange={(e) => {
-                        if (e.target.checked) {
-                          setSliderMaxNodes(0);
-                          setMaxNodes(0);
-                        } else {
-                          const v = Math.min(2000, graphData.nodes.length);
+                        const enabled = e.target.checked;
+                        setMaxNodesEnabled(enabled);
+                        if (enabled) {
+                          const v = Math.min(sliderMaxNodes || 2000, graphData.nodes.length);
                           setSliderMaxNodes(v);
                           setMaxNodes(v);
+                        } else {
+                          setMaxNodes(0);
                         }
                       }}
                     />
-                    <span className="text-red-400 font-medium">All</span>
+                    <span className={`font-medium ${maxNodesEnabled ? "text-red-400" : "text-gray-500"}`}>
+                      {maxNodesEnabled ? "Enabled" : "Off"}
+                    </span>
                   </label>
                 </label>
-                {sliderMaxNodes > 0 && sliderMaxNodes < graphData.nodes.length && (
+                {maxNodesEnabled && (
                   <>
                     <input
                       type="range"
@@ -423,9 +429,12 @@ const Dashboard: React.FC = () => {
                       className="w-full accent-red-500"
                     />
                     <div className="flex items-center justify-between text-[10px] text-gray-500">
-                      <span>{sliderMaxNodes.toLocaleString()}</span>
-                      <span>of {graphData.nodes.length.toLocaleString()}</span>
+                      <span className="text-red-300 font-semibold">{sliderMaxNodes.toLocaleString()} shown</span>
+                      <span>of {graphData.nodes.length.toLocaleString()} total</span>
                     </div>
+                    <p className="mt-1 text-[9px] text-gray-600 leading-tight">
+                      Limits nodes shown for faster rendering. Suspicious nodes are prioritised.
+                    </p>
                   </>
                 )}
               </>
@@ -447,7 +456,7 @@ const Dashboard: React.FC = () => {
             <span className="text-sm font-semibold text-white">Money Muling Detector</span>
             {result && (
               <span className="flex items-center gap-1 rounded-full bg-green-900/50 px-2 py-0.5 text-[10px] font-medium text-green-400">
-                <span className="h-1.5 w-1.5 rounded-full bg-green-400"/>Complete
+                <span className="h-1.5 w-1.5 rounded-full bg-green-400" />Complete
               </span>
             )}
           </div>
@@ -495,10 +504,10 @@ const Dashboard: React.FC = () => {
               {/* Stats row */}
               <div className="grid shrink-0 grid-cols-4 gap-3">
                 {([
-                  ["ACCOUNTS ANALYZED", result.summary.total_accounts_analyzed, "text-white", <IconGlobe key="g"/>],
-                  ["SUSPICIOUS FLAGGED", result.summary.suspicious_accounts_flagged, "text-yellow-400", <IconWarn key="w"/>],
-                  ["FRAUD RINGS DETECTED", result.summary.fraud_rings_detected, "text-red-400", <IconRing key="r"/>],
-                  ["ANALYSIS TIME", clientElapsedTime != null ? `${(clientElapsedTime / 1000).toFixed(2)}s` : `${result.summary.processing_time_seconds.toFixed(2)}s`, "text-green-400", <IconBolt key="b"/>],
+                  ["ACCOUNTS ANALYZED", result.summary.total_accounts_analyzed, "text-white", <IconGlobe key="g" />],
+                  ["SUSPICIOUS FLAGGED", result.summary.suspicious_accounts_flagged, "text-yellow-400", <IconWarn key="w" />],
+                  ["FRAUD RINGS DETECTED", result.summary.fraud_rings_detected, "text-red-400", <IconRing key="r" />],
+                  ["ANALYSIS TIME", clientElapsedTime != null ? `${(clientElapsedTime / 1000).toFixed(2)}s` : `${result.summary.processing_time_seconds.toFixed(2)}s`, "text-green-400", <IconBolt key="b" />],
                 ] as [string, string | number, string, React.ReactNode][]).map(([label, value, color, icon], idx) => (
                   <div key={label} className="rounded-xl border border-gray-800 bg-[#111] px-4 py-3 animate-[fadeSlideUp_0.4s_ease-out]" style={{ animationDelay: `${idx * 80}ms`, animationFillMode: 'backwards' }}>
                     <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-500">
@@ -527,6 +536,7 @@ const Dashboard: React.FC = () => {
                   {filteredGraphData ? (
                     <GraphViz
                       data={filteredGraphData}
+                      graphKey={graphKey}
                       onNodeClick={handleNodeClick}
                       zoomTo={zoomToNodes}
                       highlightRingNodes={highlightedRingMembers}
@@ -559,7 +569,7 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div className="mb-2 flex items-center gap-2 shrink-0">
                   <svg className="h-3.5 w-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
+                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
                   </svg>
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Network Graph</span>
                   {filteredRings.length > 0 && (
@@ -580,31 +590,27 @@ const Dashboard: React.FC = () => {
               <div className="flex shrink-0 border-b border-gray-800">
                 <button
                   onClick={() => { setSidebarTab("suspicious"); setHighlightedRingMembers(undefined); highlightedRingIdRef.current = null; }}
-                  className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
-                    sidebarTab === "suspicious"
-                      ? "border-b-2 border-yellow-400 text-yellow-400"
-                      : "text-gray-500 hover:text-gray-300"
-                  }`}
+                  className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${sidebarTab === "suspicious"
+                    ? "border-b-2 border-yellow-400 text-yellow-400"
+                    : "text-gray-500 hover:text-gray-300"
+                    }`}
                 >
                   <IconWarn />
                   <span>Suspicious</span>
-                  <span className={`ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
-                    sidebarTab === "suspicious" ? "bg-yellow-500 text-black" : "bg-gray-700 text-gray-400"
-                  }`}>{suspiciousSorted.length}</span>
+                  <span className={`ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${sidebarTab === "suspicious" ? "bg-yellow-500 text-black" : "bg-gray-700 text-gray-400"
+                    }`}>{suspiciousSorted.length}</span>
                 </button>
                 <button
                   onClick={() => { setSidebarTab("rings"); setSelectedAccount(null); }}
-                  className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
-                    sidebarTab === "rings"
-                      ? "border-b-2 border-red-400 text-red-400"
-                      : "text-gray-500 hover:text-gray-300"
-                  }`}
+                  className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${sidebarTab === "rings"
+                    ? "border-b-2 border-red-400 text-red-400"
+                    : "text-gray-500 hover:text-gray-300"
+                    }`}
                 >
                   <IconRing />
                   <span>Rings</span>
-                  <span className={`ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
-                    sidebarTab === "rings" ? "bg-red-500 text-white" : "bg-gray-700 text-gray-400"
-                  }`}>{filteredRings.length}</span>
+                  <span className={`ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${sidebarTab === "rings" ? "bg-red-500 text-white" : "bg-gray-700 text-gray-400"
+                    }`}>{filteredRings.length}</span>
                 </button>
               </div>
 
@@ -617,7 +623,7 @@ const Dashboard: React.FC = () => {
                     className="flex shrink-0 items-center gap-1.5 border-b border-gray-800 px-3 py-2 text-[11px] text-gray-400 hover:bg-gray-800/60 hover:text-gray-200"
                   >
                     <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7"/>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
                     </svg>
                     Back to list
                   </button>
@@ -646,12 +652,12 @@ const Dashboard: React.FC = () => {
                     {selectedAccount.detected_patterns.length === 0
                       ? <span className="text-[11px] text-gray-600">None detected</span>
                       : <div className="flex flex-wrap gap-1.5">
-                          {selectedAccount.detected_patterns.map((p, i) => (
-                            <span key={i} className="rounded-full bg-red-900/40 border border-red-800/50 px-2 py-0.5 text-[10px] font-medium text-red-300">
-                              {p.replace(/_/g, " ")}
-                            </span>
-                          ))}
-                        </div>
+                        {selectedAccount.detected_patterns.map((p, i) => (
+                          <span key={i} className="rounded-full bg-red-900/40 border border-red-800/50 px-2 py-0.5 text-[10px] font-medium text-red-300">
+                            {p.replace(/_/g, " ")}
+                          </span>
+                        ))}
+                      </div>
                     }
                   </div>
 
@@ -683,9 +689,8 @@ const Dashboard: React.FC = () => {
                                   <td className="whitespace-nowrap px-2 py-1.5 capitalize">{ring.pattern_type.replace(/_/g, " ")}</td>
                                   <td className="px-2 py-1.5 text-center">{ring.member_accounts.length}</td>
                                   <td className="px-2 py-1.5 text-center">
-                                    <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
-                                      ring.risk_score > 30 ? "bg-red-600 text-red-100" : ring.risk_score > 12 ? "bg-yellow-600 text-yellow-100" : "bg-green-700 text-green-100"
-                                    }`}>{ring.risk_score}</span>
+                                    <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold ${ring.risk_score > 30 ? "bg-red-600 text-red-100" : ring.risk_score > 12 ? "bg-yellow-600 text-yellow-100" : "bg-green-700 text-green-100"
+                                      }`}>{ring.risk_score}</span>
                                   </td>
                                 </tr>
                               ))}
@@ -737,86 +742,83 @@ const Dashboard: React.FC = () => {
                     const acctRingIds = acct.ring_ids?.length ? acct.ring_ids : acct.ring_id ? [acct.ring_id] : [];
                     const acctRings = result ? result.fraud_rings.filter((r) => acctRingIds.includes(r.ring_id)) : [];
                     return (
-                    <button
-                      key={acct.account_id}
-                      onClick={() => handleAccountListClick(acct)}
-                      className="flex w-full items-center gap-2 border-b border-gray-800/60 px-3 py-2.5 text-left transition-colors hover:bg-gray-800/60"
-                    >
-                      <ScoreBadge score={acct.suspicion_score} />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-semibold text-gray-100">{acct.account_id}</p>
-                        {acctRings.length > 0 ? (
-                          <div className="mt-0.5 flex flex-wrap gap-1">
-                            {acctRings.slice(0, 3).map((ring) => (
-                              <span
-                                key={`${ring.ring_id}_${ring.pattern_type}`}
-                                className={`inline-block rounded-full px-1.5 py-[1px] text-[8px] font-bold leading-tight ${
-                                  ring.risk_score > 30 ? "bg-red-900/60 text-red-300" : ring.risk_score > 12 ? "bg-yellow-900/60 text-yellow-300" : "bg-green-900/60 text-green-300"
-                                }`}
-                              >
-                                {ring.ring_id} · {ring.pattern_type}
-                              </span>
-                            ))}
-                            {acctRings.length > 3 && (
-                              <span className="text-[8px] text-gray-500">+{acctRings.length - 3} more</span>
-                            )}
-                          </div>
-                        ) : (
-                          <p className="truncate text-[10px] text-gray-500">
-                            {acct.detected_patterns[0]
-                              ? <span className="text-red-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
-                              : "—"
-                            }
-                          </p>
-                        )}
-                      </div>
-                      <IconChevron />
-                    </button>
+                      <button
+                        key={acct.account_id}
+                        onClick={() => handleAccountListClick(acct)}
+                        className="flex w-full items-center gap-2 border-b border-gray-800/60 px-3 py-2.5 text-left transition-colors hover:bg-gray-800/60"
+                      >
+                        <ScoreBadge score={acct.suspicion_score} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-xs font-semibold text-gray-100">{acct.account_id}</p>
+                          {acctRings.length > 0 ? (
+                            <div className="mt-0.5 flex flex-wrap gap-1">
+                              {acctRings.slice(0, 3).map((ring) => (
+                                <span
+                                  key={`${ring.ring_id}_${ring.pattern_type}`}
+                                  className={`inline-block rounded-full px-1.5 py-[1px] text-[8px] font-bold leading-tight ${ring.risk_score > 30 ? "bg-red-900/60 text-red-300" : ring.risk_score > 12 ? "bg-yellow-900/60 text-yellow-300" : "bg-green-900/60 text-green-300"
+                                    }`}
+                                >
+                                  {ring.ring_id} · {ring.pattern_type}
+                                </span>
+                              ))}
+                              {acctRings.length > 3 && (
+                                <span className="text-[8px] text-gray-500">+{acctRings.length - 3} more</span>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="truncate text-[10px] text-gray-500">
+                              {acct.detected_patterns[0]
+                                ? <span className="text-red-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
+                                : "—"
+                              }
+                            </p>
+                          )}
+                        </div>
+                        <IconChevron />
+                      </button>
                     );
                   })}
                 </div>
               ) : (
-              /* ── FRAUD RINGS TAB ── */
-              <div className="flex-1 overflow-y-auto">
-                {filteredRings.length === 0 ? (
-                  <div className="flex h-full items-center justify-center text-xs text-gray-600">No fraud rings detected</div>
-                ) : filteredRings.map((ring) => {
-                  const isActive = highlightedRingIdRef.current === ring.ring_id;
-                  return (
-                    <button
-                      key={`${ring.ring_id}_${ring.pattern_type}`}
-                      onClick={() => handleSidebarRingHighlight(ring.ring_id)}
-                      className={`flex w-full items-start gap-2.5 border-b border-gray-800/60 px-3 py-3 text-left transition-colors ${
-                        isActive ? "bg-red-950/40 border-l-2 border-l-red-500" : "hover:bg-gray-800/60"
-                      }`}
-                    >
-                      {/* Risk badge */}
-                      <div className={`flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg ${
-                        ring.risk_score > 30 ? "bg-red-600" : ring.risk_score > 12 ? "bg-yellow-600" : "bg-green-700"
-                      }`}>
-                        <span className="text-sm font-bold leading-none text-white">{ring.risk_score}</span>
-                        <span className="text-[8px] font-semibold text-white/80">RISK</span>
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-xs font-bold text-gray-100">{ring.ring_id}</p>
-                        <p className="mt-0.5 text-[10px] capitalize text-gray-400">{ring.pattern_type.replace(/_/g, " ")}</p>
-                        <div className="mt-1 flex items-center gap-2">
-                          <span className="flex items-center gap-1 rounded-full bg-gray-800 px-1.5 py-0.5 text-[9px] font-medium text-gray-300">
-                            <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z"/></svg>
-                            {ring.member_accounts.length} members
-                          </span>
-                          {isActive && (
-                            <span className="rounded-full bg-red-900/60 px-1.5 py-0.5 text-[9px] font-bold text-red-300">
-                              HIGHLIGHTED
-                            </span>
-                          )}
+                /* ── FRAUD RINGS TAB ── */
+                <div className="flex-1 overflow-y-auto">
+                  {filteredRings.length === 0 ? (
+                    <div className="flex h-full items-center justify-center text-xs text-gray-600">No fraud rings detected</div>
+                  ) : filteredRings.map((ring) => {
+                    const isActive = highlightedRingIdRef.current === ring.ring_id;
+                    return (
+                      <button
+                        key={`${ring.ring_id}_${ring.pattern_type}`}
+                        onClick={() => handleSidebarRingHighlight(ring.ring_id)}
+                        className={`flex w-full items-start gap-2.5 border-b border-gray-800/60 px-3 py-3 text-left transition-colors ${isActive ? "bg-red-950/40 border-l-2 border-l-red-500" : "hover:bg-gray-800/60"
+                          }`}
+                      >
+                        {/* Risk badge */}
+                        <div className={`flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg ${ring.risk_score > 30 ? "bg-red-600" : ring.risk_score > 12 ? "bg-yellow-600" : "bg-green-700"
+                          }`}>
+                          <span className="text-sm font-bold leading-none text-white">{ring.risk_score}</span>
+                          <span className="text-[8px] font-semibold text-white/80">RISK</span>
                         </div>
-                      </div>
-                      <IconChevron />
-                    </button>
-                  );
-                })}
-              </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-bold text-gray-100">{ring.ring_id}</p>
+                          <p className="mt-0.5 text-[10px] capitalize text-gray-400">{ring.pattern_type.replace(/_/g, " ")}</p>
+                          <div className="mt-1 flex items-center gap-2">
+                            <span className="flex items-center gap-1 rounded-full bg-gray-800 px-1.5 py-0.5 text-[9px] font-medium text-gray-300">
+                              <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z" /></svg>
+                              {ring.member_accounts.length} members
+                            </span>
+                            {isActive && (
+                              <span className="rounded-full bg-red-900/60 px-1.5 py-0.5 text-[9px] font-bold text-red-300">
+                                HIGHLIGHTED
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <IconChevron />
+                      </button>
+                    );
+                  })}
+                </div>
               )}
             </aside>
           </div>
@@ -906,12 +908,8 @@ const Dashboard: React.FC = () => {
       {/* ── CENTERED LOADING SCREEN (always shown when analysing) ── */}
       {isAnalysing && !result && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm">
-          <Aurora
-            colorStops={["#a51d2d", "#ffffff", "#a51d2d"]}
-            blend={1}
-            amplitude={1.0}
-            speed={0.7}
-          />
+          {/* Static gradient background instead of Aurora WebGL to avoid CPU/GPU contention with analysis */}
+          <div className="absolute inset-0 bg-gradient-to-br from-red-950/30 via-black to-red-900/20 pointer-events-none" />
           <div className="relative z-10 flex flex-col items-center gap-6 animate-[fadeScale_0.5s_ease-out]">
             <Logo size={48} showText={false} />
             <div className="relative h-16 w-16">

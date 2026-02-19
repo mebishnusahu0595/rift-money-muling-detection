@@ -8,6 +8,8 @@ import type { GraphData, GraphNode } from "../types";
 interface Props {
   data: GraphData;
   onNodeClick: (nodeId: string) => void;
+  /** Controls full remount — should ONLY change on new CSV upload, not on filter changes */
+  graphKey: string;
   /** Optional: zoom graph to a set of node IDs */
   zoomTo?: string[];
   /** Optional: highlight these node IDs as a fraud ring (red nodes + red edges between them, dim rest) */
@@ -19,9 +21,17 @@ const RING_COLORS = [
   "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16",
 ];
 
-// Stable key derived from data so CytoscapeComponent fully remounts on new data
+// Stable key derived from data so CytoscapeComponent fully remounts on new data.
+// We sort & join only the first 30 IDs to keep this cheap while still being
+// sensitive to actual graph structure changes (not just filter-driven array
+// reference changes on the same underlying nodes).
 function dataKey(d: GraphData) {
-  return `${d.nodes.length}-${d.edges.length}-${d.nodes.map((n) => n.id).join(",")}`;
+  const sample = d.nodes
+    .slice(0, 30)
+    .map((n) => n.id)
+    .sort()
+    .join(",");
+  return `${d.nodes.length}-${d.edges.length}-${sample}`;
 }
 
 // Zoom presets
@@ -43,7 +53,7 @@ function getLabelLevel(zoom: number): LabelLevel {
 
 // ── component ──────────────────────────────────────────────────────────────
 
-export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes }: Props) {
+export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highlightRingNodes }: Props) {
   const cyRef = useRef<Core | null>(null);
   const [showNormal, setShowNormal] = useState(true);
   const [showLowRisk, setShowLowRisk] = useState(true);
@@ -55,6 +65,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
   const [tappedNode, setTappedNode] = useState<{ id: string; score: number } | null>(null);
   const [zoomPercent, setZoomPercent] = useState(100);
   const [labelLevel, setLabelLevel] = useState<LabelLevel>("all");
+  const [layoutRunning, setLayoutRunning] = useState(false);
   const [showMinimap, setShowMinimap] = useState(true);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
   const minimapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -98,9 +109,11 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
 
       return {
         group: "nodes" as const,
-        data: { id: n.id, label: n.id, score, color, size, icon, ringColor, degree,
+        data: {
+          id: n.id, label: n.id, score, color, size, icon, ringColor, degree,
           riskCategory, inflow: n.total_inflow, outflow: n.total_outflow, isNormal: score === 0,
-          patterns: n.detected_patterns ?? [] },
+          patterns: n.detected_patterns ?? []
+        },
       };
     });
 
@@ -154,22 +167,22 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
         selector: "edge",
         style: {
           width: "data(width)" as unknown as number,
-          "line-color": "#4a6fa5",
-          "target-arrow-color": "#4a6fa5",
+          "line-color": "#b0c4de",
+          "target-arrow-color": "#b0c4de",
           "target-arrow-shape": "triangle" as const,
           "arrow-scale": 0.6,
           "curve-style": "bezier" as const,
           "line-style": "dashed" as const,
           "line-dash-pattern": [4, 2] as unknown as number,
           "line-dash-offset": 0,
-          opacity: 0.6,
+          opacity: 0.85,
         },
       },
       {
         selector: "node:selected",
         style: { "border-width": 3, "border-color": "#6366f1", "overlay-opacity": 0 },
       },
-      { selector: ".dimmed",      style: { opacity: 0.07 } },
+      { selector: ".dimmed", style: { opacity: 0.07 } },
       { selector: ".highlighted", style: { opacity: 1 } },
       {
         selector: ".ring-node",
@@ -239,7 +252,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
   // ── Animated edge flow (disabled for large graphs — major perf win) ──
   useEffect(() => {
     const nodeCount = data.nodes.length;
-    if (nodeCount > 300) return;               // skip entirely for large graphs
+    if (nodeCount > 3000) return;              // skip only for very large graphs
     let offset = 0;
     const interval = nodeCount > 150 ? 120 : 60;
     const timer = setInterval(() => {
@@ -420,7 +433,8 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
       const renderer = (cy as unknown as Record<string, Record<string, unknown>>)._private?.renderer as Record<string, unknown> | undefined;
       if (renderer) {
         if (nodeCount > 150) renderer["textureOnViewport"] = true;
-        if (nodeCount > 400) renderer["hideEdgesOnViewport"] = true;
+        // NOTE: hideEdgesOnViewport intentionally NOT set — it causes animated
+        // flow edges to disappear during pan/drag which breaks the UX.
       }
       if (nodeCount > 200) {
         cy.style().selector("node").style("text-max-width" as string, "60px" as never);
@@ -465,41 +479,57 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
       const density = edgeCount / Math.max(nodeCount, 1);
       const sqrtN = Math.sqrt(nodeCount);
 
-      if (nodeCount > 8000) {
-        // Very large graph: use circle layout (O(N), instant)
-        cy.layout({
-          name: "circle",
-          animate: false,
-          padding: 20,
-          spacingFactor: 0.6,
-        } as never).run();
-      } else {
-        // cose layout — sqrt-scaled so large graphs stay compact
-        const repulsion = nodeCount <= 50
-          ? Math.max(8000, nodeCount * 800)
-          : Math.max(8000, sqrtN * 1800 + density * 400);
-        const edgeLen = nodeCount <= 50
-          ? Math.max(80, nodeCount * 4)
-          : Math.max(60, sqrtN * 6);
-        const gravity = nodeCount <= 100 ? 0.12 : Math.min(0.6, 0.1 + sqrtN * 0.012);
-        // Fewer iterations for big graphs to avoid UI freeze
-        const iterations = nodeCount > 3000
-          ? Math.min(1500, Math.max(500, Math.round(nodeCount / 2)))
-          : Math.min(10000, Math.max(3000, nodeCount * 8));
-        cy.layout({
-          name: "cose",
-          animate: false,
-          randomize: true,
-          nodeRepulsion: () => repulsion,
-          idealEdgeLength: () => edgeLen,
-          nodeOverlap: 30,
-          gravity,
-          numIter: iterations,
-          componentSpacing: Math.max(60, Math.min(200, sqrtN * 8)),
-          padding: 40,
-          nestingFactor: 1.2,
-        } as never).run();
-      }
+      setLayoutRunning(true);
+
+      // Use setTimeout(0) to let React paint the loading overlay BEFORE
+      // the synchronous layout blocks the main thread.
+      setTimeout(() => {
+        try {
+          if (nodeCount > 1500) {
+            // Large graph: circle layout (O(N), instant, never freezes)
+            cy.layout({
+              name: "circle",
+              animate: false,
+              padding: 20,
+              spacingFactor: 0.6,
+            } as never).run();
+          } else if (nodeCount > 300) {
+            // Medium graph: grid layout (fast, no physics)
+            cy.layout({
+              name: "grid",
+              animate: false,
+              padding: 30,
+              avoidOverlap: true,
+            } as never).run();
+          } else {
+            // Small graph: cose with controlled iterations
+            const repulsion = nodeCount <= 50
+              ? Math.max(8000, nodeCount * 800)
+              : Math.max(8000, sqrtN * 1800 + density * 400);
+            const edgeLen = nodeCount <= 50
+              ? Math.max(80, nodeCount * 4)
+              : Math.max(60, sqrtN * 6);
+            const gravity = nodeCount <= 100 ? 0.12 : Math.min(0.6, 0.1 + sqrtN * 0.012);
+            // Hard cap: max 1500 iterations for any graph
+            const iterations = Math.min(1500, Math.max(800, nodeCount * 4));
+            cy.layout({
+              name: "cose",
+              animate: false,
+              randomize: true,
+              nodeRepulsion: () => repulsion,
+              idealEdgeLength: () => edgeLen,
+              nodeOverlap: 30,
+              gravity,
+              numIter: iterations,
+              componentSpacing: Math.max(60, Math.min(200, sqrtN * 8)),
+              padding: 40,
+              nestingFactor: 1.2,
+            } as never).run();
+          }
+        } finally {
+          setLayoutRunning(false);
+        }
+      }, 0);
 
       // Constrain zoom & fit
       cy.maxZoom(10.0);   // 1000%
@@ -597,9 +627,8 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
         {/* Focus mode */}
         <button
           onClick={() => setFocusModeEnabled((v) => !v)}
-          className={`rounded px-1.5 py-0.5 font-semibold transition-colors ${
-            focusModeEnabled ? "bg-indigo-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-          }`}
+          className={`rounded px-1.5 py-0.5 font-semibold transition-colors ${focusModeEnabled ? "bg-indigo-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+            }`}
         >
           {focusModeEnabled ? "Focus ON" : "Focus"}
         </button>
@@ -612,11 +641,10 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
                 key={p.label}
                 onClick={() => handleZoomPreset(p.value)}
                 title={`${p.desc} (${Math.round(p.value * 100)}%)`}
-                className={`rounded px-1.5 py-0.5 transition-colors ${
-                  Math.abs(zoomPercent - p.value * 100) < 5
-                    ? "bg-blue-600 text-white"
-                    : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
-                }`}
+                className={`rounded px-1.5 py-0.5 transition-colors ${Math.abs(zoomPercent - p.value * 100) < 5
+                  ? "bg-blue-600 text-white"
+                  : "bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-gray-200"
+                  }`}
               >{p.label}</button>
             ))}
           </div>
@@ -634,9 +662,8 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
           <button
             onClick={() => setShowMinimap((v) => !v)}
             title="Toggle minimap"
-            className={`rounded px-1.5 py-0.5 transition-colors ${
-              showMinimap ? "bg-indigo-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
-            }`}
+            className={`rounded px-1.5 py-0.5 transition-colors ${showMinimap ? "bg-indigo-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
+              }`}
           >🗺</button>
         </div>
       </div>
@@ -647,16 +674,14 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
         {tappedNode && (
           <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2">
             <div className="flex items-center gap-2.5 rounded-xl border border-gray-700/80 bg-gray-900/90 px-4 py-2 shadow-xl backdrop-blur-md">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white ${
-                tappedNode.score > 70 ? "bg-red-600" : tappedNode.score > 20 ? "bg-yellow-600" : "bg-green-700"
-              }`}>
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white ${tappedNode.score > 70 ? "bg-red-600" : tappedNode.score > 20 ? "bg-yellow-600" : "bg-green-700"
+                }`}>
                 {tappedNode.score}
               </div>
               <div>
                 <p className="text-sm font-bold tracking-wide text-white">{tappedNode.id}</p>
-                <p className={`text-[10px] font-semibold ${
-                  tappedNode.score > 70 ? "text-red-400" : tappedNode.score > 20 ? "text-yellow-400" : "text-green-400"
-                }`}>
+                <p className={`text-[10px] font-semibold ${tappedNode.score > 70 ? "text-red-400" : tappedNode.score > 20 ? "text-yellow-400" : "text-green-400"
+                  }`}>
                   {tappedNode.score > 70 ? "High Risk" : tappedNode.score > 20 ? "Suspicious" : "Normal"}
                 </p>
               </div>
@@ -676,8 +701,20 @@ export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes
           </div>
         </div>
 
+        {/* Layout-running overlay — prevents interaction while cose runs */}
+        {layoutRunning && (
+          <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/75 backdrop-blur-sm">
+            <div className="relative h-12 w-12 mb-3">
+              <div className="absolute inset-0 animate-spin rounded-full border-4 border-red-900 border-t-red-500" />
+              <div className="absolute inset-2 animate-spin rounded-full border-2 border-red-800 border-b-red-400" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+            </div>
+            <p className="text-sm font-semibold text-white">Computing layout…</p>
+            <p className="text-[11px] text-gray-400 mt-1">{data.nodes.length.toLocaleString()} nodes · {data.edges.length.toLocaleString()} edges</p>
+          </div>
+        )}
+
         <CytoscapeComponent
-          key={dataKey(data)}
+          key={graphKey}
           elements={[]}
           stylesheet={stylesheet as never}
           style={{ width: "100%", height: "100%", minHeight: 300, background: "rgba(13,17,23,0.95)" }}
