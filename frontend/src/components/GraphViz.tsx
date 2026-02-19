@@ -8,6 +8,8 @@ import type { GraphData, GraphNode } from "../types";
 interface Props {
   data: GraphData;
   onNodeClick: (nodeId: string) => void;
+  /** Optional: zoom graph to a set of node IDs */
+  zoomTo?: string[];
 }
 
 const RING_COLORS = [
@@ -17,18 +19,18 @@ const RING_COLORS = [
 
 // ── component ──────────────────────────────────────────────────────────────
 
-export default function GraphViz({ data, onNodeClick }: Props) {
+export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   const cyRef = useRef<Core | null>(null);
   const [showNormal, setShowNormal] = useState(true);
   const [minScore, setMinScore] = useState(0);
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const focusedRef = useRef<string | null>(null);
-  // stable ref so tap-handler never goes stale without re-registering
+  const focusModeRef = useRef(false);
+  // always-current callback ref — never stale
   const onNodeClickRef = useRef(onNodeClick);
-  useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
-  // track which data version we last laid out so we don't re-run on re-renders
+  useEffect(() => { onNodeClickRef.current = onNodeClick; });
+  // track layout runs
   const layoutDataSig = useRef<string>("");
-  const listenersAttached = useRef(false);
 
   const elements = useMemo(() => {
     // Person SVG icons encoded as data URIs
@@ -127,17 +129,16 @@ export default function GraphViz({ data, onNodeClick }: Props) {
     []
   );
 
-  // Sync focus mode flag so tap handler can read it without stale closure
+  // ── Sync focus mode ref so tap handler always sees current value ──────────
   useEffect(() => {
-    if (!cyRef.current) return;
-    (cyRef.current as any).__focusMode = focusModeEnabled;
-    if (!focusModeEnabled) {
+    focusModeRef.current = focusModeEnabled;
+    if (!focusModeEnabled && cyRef.current) {
       cyRef.current.elements().removeClass("dimmed highlighted");
       focusedRef.current = null;
     }
   }, [focusModeEnabled]);
 
-  // Reactive filter — hide/show without re-layout
+  // ── Reactive filter — hide/show without re-layout ──────────────────────
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -161,19 +162,34 @@ export default function GraphViz({ data, onNodeClick }: Props) {
     (cy.edges().not(edgesToHide) as any).show();
   }, [showNormal, minScore]);
 
+  // ── zoomTo prop: when caller passes node IDs to zoom into ─────────────
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy || !zoomTo || zoomTo.length === 0) return;
+    const nodes = cy.collection(zoomTo.map((id) => `#${id}`).join(", "));
+    if (nodes.length > 0) {
+      cy.animate({ fit: { eles: nodes, padding: 80 }, duration: 500 } as never);
+    }
+  }, [zoomTo]);
+
+  // ── cy prop callback: set ref + run layout when data changes ─────────────
   const handleCyReady = useCallback(
     (cy: Core) => {
-      cyRef.current = cy;
-      (cy as any).__focusMode = focusModeEnabled;
+      const prevCy = cyRef.current;
 
-      // Register listeners exactly once per cy instance
-      if (!listenersAttached.current) {
-        listenersAttached.current = true;
+      // ── Register tap listeners once (or when cy instance changes) ──────
+      if (prevCy !== cy) {
+        cyRef.current = cy;
+
+        // Remove any stale listeners from previous instance (shouldn't happen,
+        // but belt-and-suspenders)
+        if (prevCy) {
+          prevCy.off("tap");
+        }
 
         cy.on("tap", "node", (e: EventObject) => {
           const id: string = e.target.id();
-          const fm = (cy as any).__focusMode;
-          if (fm) {
+          if (focusModeRef.current) {
             if (focusedRef.current === id) {
               cy.elements().removeClass("dimmed highlighted");
               focusedRef.current = null;
@@ -184,7 +200,7 @@ export default function GraphViz({ data, onNodeClick }: Props) {
               hood.removeClass("dimmed").addClass("highlighted");
             }
           }
-          // always use the ref so we never have a stale closure
+          // Use the always-current ref — never a stale closure
           onNodeClickRef.current(id);
         });
 
@@ -196,7 +212,7 @@ export default function GraphViz({ data, onNodeClick }: Props) {
         });
       }
 
-      // Run layout ONLY when the data signature changes (not on every re-render)
+      // ── Run layout only when the data fingerprint changes ──────────────
       const sig = `${data.nodes.length}-${data.edges.length}`;
       if (layoutDataSig.current === sig) return;
       layoutDataSig.current = sig;
@@ -205,14 +221,14 @@ export default function GraphViz({ data, onNodeClick }: Props) {
       cy.layout({
         name: "cose",
         animate: false,
-        nodeRepulsion: () => Math.max(30000, nodeCount * 5000),
-        idealEdgeLength: () => Math.max(220, nodeCount * 28),
-        nodeOverlap: 60,
-        gravity: 0.2,
+        nodeRepulsion: () => Math.max(45000, nodeCount * 8000),
+        idealEdgeLength: () => Math.max(180, nodeCount * 22),
+        nodeOverlap: 80,
+        gravity: 0.15,
         numIter: 3000,
-        componentSpacing: 200,
+        componentSpacing: 250,
         padding: 80,
-        randomize: false,
+        randomize: true,
       } as never).run();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -12,10 +12,13 @@ const Dashboard: React.FC = () => {
     useAnalysis();
 
   const [selectedAccount, setSelectedAccount] = useState<SuspiciousAccount | null>(null);
+  const [zoomToNodes, setZoomToNodes] = useState<string[] | undefined>(undefined);
 
   const handleNodeClick = useCallback(
     (nodeId: string) => {
       if (!result) return;
+      // zoom graph to this node
+      setZoomToNodes([nodeId]);
       // First check suspicious accounts (have full detail)
       const suspicious = result.suspicious_accounts.find((a) => a.account_id === nodeId);
       if (suspicious) {
@@ -47,6 +50,8 @@ const Dashboard: React.FC = () => {
       if (!result) return;
       const ring = result.fraud_rings.find((r) => r.ring_id === ringId);
       if (ring && ring.member_accounts.length > 0) {
+        // zoom graph to all ring members
+        setZoomToNodes([...ring.member_accounts]);
         const acct =
           result.suspicious_accounts.find((a) => a.account_id === ring.member_accounts[0]) ?? null;
         setSelectedAccount(acct);
@@ -160,7 +165,7 @@ const Dashboard: React.FC = () => {
               {/* Graph */}
               <div className="flex min-w-0 flex-1 flex-col">
                 {graphData ? (
-                  <GraphViz data={graphData} onNodeClick={handleNodeClick} />
+                  <GraphViz data={graphData} onNodeClick={handleNodeClick} zoomTo={zoomToNodes} />
                 ) : (
                   <div className="flex flex-1 items-center justify-center rounded-2xl bg-gray-900/60 text-gray-500">
                     Loading graph…
