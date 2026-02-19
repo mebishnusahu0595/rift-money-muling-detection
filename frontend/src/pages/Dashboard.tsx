@@ -77,16 +77,46 @@ const Dashboard: React.FC = () => {
   const [highlightedRingMembers, setHighlightedRingMembers] = useState<string[] | undefined>(undefined);
   const highlightedRingIdRef = useRef<string | null>(null);
 
+  /* ── Live elapsed timer ── */
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [clientElapsedTime, setClientElapsedTime] = useState<number | null>(null);
+  const analysisStartRef = useRef<number | null>(null);
+
   /* ── Resizable ring section ── */
   const [ringHeight, setRingHeight] = useState(320);
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
   const startHRef = useRef(0);
 
+  const isAnalysing = uploading || polling;
+
   /* Auto-dismiss upload screen when results arrive */
   useEffect(() => {
     if (result && showUploadScreen) setShowUploadScreen(false);
   }, [result, showUploadScreen]);
+
+  /* ── Timer: count while analysing ── */
+  useEffect(() => {
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    if (isAnalysing) {
+      if (!analysisStartRef.current) {
+        analysisStartRef.current = Date.now();
+        setElapsedMs(0);
+        setClientElapsedTime(null);
+      }
+      intervalId = setInterval(() => {
+        setElapsedMs(Date.now() - analysisStartRef.current!);
+      }, 10);
+    } else if (analysisStartRef.current) {
+      const finalTime = Date.now() - analysisStartRef.current;
+      setClientElapsedTime(finalTime);
+      setElapsedMs(finalTime);
+      analysisStartRef.current = null;
+    }
+    return () => {
+      if (intervalId) clearInterval(intervalId);
+    };
+  }, [isAnalysing]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -265,8 +295,6 @@ const Dashboard: React.FC = () => {
     },
     [result]
   );
-
-  const isAnalysing = uploading || polling;
 
   const filteredRings = useMemo(() => {
     const raw =
@@ -461,7 +489,7 @@ const Dashboard: React.FC = () => {
 
         {/* Results */}
         {result && (
-          <div className="flex min-h-0 flex-1 overflow-hidden">
+          <div className="flex min-h-0 flex-1 overflow-hidden animate-[fadeSlideUp_0.5s_ease-out]">
             {/* Center column */}
             <div className="flex min-w-0 flex-1 flex-col overflow-hidden p-4 gap-3">
               {/* Stats row */}
@@ -470,9 +498,9 @@ const Dashboard: React.FC = () => {
                   ["ACCOUNTS ANALYZED", result.summary.total_accounts_analyzed, "text-white", <IconGlobe key="g"/>],
                   ["SUSPICIOUS FLAGGED", result.summary.suspicious_accounts_flagged, "text-yellow-400", <IconWarn key="w"/>],
                   ["FRAUD RINGS DETECTED", result.summary.fraud_rings_detected, "text-red-400", <IconRing key="r"/>],
-                  ["PROCESSING TIME", `${result.summary.processing_time_seconds.toFixed(2)}s`, "text-green-400", <IconBolt key="b"/>],
-                ] as [string, string | number, string, React.ReactNode][]).map(([label, value, color, icon]) => (
-                  <div key={label} className="rounded-xl border border-gray-800 bg-[#111] px-4 py-3">
+                  ["ANALYSIS TIME", clientElapsedTime != null ? `${(clientElapsedTime / 1000).toFixed(2)}s` : `${result.summary.processing_time_seconds.toFixed(2)}s`, "text-green-400", <IconBolt key="b"/>],
+                ] as [string, string | number, string, React.ReactNode][]).map(([label, value, color, icon], idx) => (
+                  <div key={label} className="rounded-xl border border-gray-800 bg-[#111] px-4 py-3 animate-[fadeSlideUp_0.4s_ease-out]" style={{ animationDelay: `${idx * 80}ms`, animationFillMode: 'backwards' }}>
                     <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-500">
                       <span>{label}</span>{icon}
                     </div>
@@ -482,7 +510,7 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* Transaction Flow Map (graph) */}
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-[#111]">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-[#111] animate-[fadeIn_0.6s_ease-out]" style={{ animationDelay: '0.35s', animationFillMode: 'backwards' }}>
                 <div className="flex shrink-0 items-center gap-3 border-b border-gray-800 px-4 py-2.5">
                   <IconNetwork />
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">Transaction Flow Map</span>
@@ -803,7 +831,7 @@ const Dashboard: React.FC = () => {
             colorStops={["#a51d2d", "#ffffff", "#a51d2d"]}
             blend={1}
             amplitude={1.0}
-            speed={2}
+            speed={0.7}
           />
           <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-gray-800 bg-black/80 shadow-2xl animate-[fadeScale_0.5s_ease-out]">
             {/* Header illustration */}
@@ -849,7 +877,7 @@ const Dashboard: React.FC = () => {
             colorStops={["#a51d2d", "#ffffff", "#a51d2d"]}
             blend={1}
             amplitude={1.0}
-            speed={2}
+            speed={0.7}
           />
           <div className="relative z-10 mx-4 w-full max-w-lg animate-[fadeSlideUp_0.6s_ease-out]">
             <div className="mb-6 flex justify-center">
@@ -875,22 +903,37 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* ── CENTERED LOADING SCREEN (uploading/polling after centered upload) ── */}
-      {showUploadScreen && isAnalysing && !result && (
+      {/* ── CENTERED LOADING SCREEN (always shown when analysing) ── */}
+      {isAnalysing && !result && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm">
           <Aurora
             colorStops={["#a51d2d", "#ffffff", "#a51d2d"]}
             blend={1}
             amplitude={1.0}
-            speed={2}
+            speed={0.7}
           />
-          <div className="relative z-10 flex flex-col items-center gap-4">
+          <div className="relative z-10 flex flex-col items-center gap-6 animate-[fadeScale_0.5s_ease-out]">
             <Logo size={48} showText={false} />
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-red-900 border-t-red-500" />
+            <div className="relative h-16 w-16">
+              <div className="absolute inset-0 animate-spin rounded-full border-4 border-red-900 border-t-red-500" />
+              <div className="absolute inset-2 animate-spin rounded-full border-2 border-red-800 border-b-red-400" style={{ animationDirection: 'reverse', animationDuration: '1.5s' }} />
+            </div>
             <p className="text-lg font-semibold text-white">
               {uploading ? "Uploading…" : "Analyzing transactions…"}
             </p>
+            {/* Live timer */}
+            <div className="flex items-baseline gap-1 font-mono">
+              <span className="text-3xl font-bold text-red-400">{Math.floor(elapsedMs / 1000)}</span>
+              <span className="text-lg text-red-400/80">.</span>
+              <span className="text-xl font-semibold text-red-400/70">{String(Math.floor((elapsedMs % 1000) / 10)).padStart(2, '0')}</span>
+              <span className="ml-1 text-sm text-gray-500">sec</span>
+            </div>
             <p className="text-sm text-gray-500">Detecting fraud rings and suspicious patterns</p>
+            <div className="flex gap-2 mt-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" />
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" style={{ animationDelay: '0.3s' }} />
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500 animate-pulse" style={{ animationDelay: '0.6s' }} />
+            </div>
           </div>
         </div>
       )}
