@@ -4,32 +4,56 @@ interface Props {
   onUpload: (file: File) => void;
   uploading: boolean;
   polling: boolean;
+  centered?: boolean;
 }
 
-const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling }: Props) => {
+const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling, centered = false }: Props) => {
   const [dragOver, setDragOver] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const busy = uploading || polling;
+
+  const handleFile = useCallback(
+    (f: File) => {
+      if (busy) return;
+      if (f && f.name.endsWith(".csv")) {
+        onUpload(f); // auto-analyze immediately
+      }
+    },
+    [onUpload, busy]
+  );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       setDragOver(false);
       const f = e.dataTransfer.files[0];
-      if (f && f.name.endsWith(".csv")) setFile(f);
+      if (f) handleFile(f);
     },
-    []
+    [handleFile]
   );
 
   const handleSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const f = e.target.files?.[0];
-      if (f) setFile(f);
+      if (f) handleFile(f);
     },
-    []
+    [handleFile]
   );
 
-  const busy = uploading || polling;
+  if (busy) {
+    return (
+      <div className={`flex flex-col items-center justify-center gap-3 ${centered ? "py-12" : "py-6"}`}>
+        <div className="relative">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-red-900 border-t-red-500" />
+        </div>
+        <p className="text-sm font-medium text-white">
+          {uploading ? "Uploading…" : "Analyzing transactions…"}
+        </p>
+        <p className="text-xs text-gray-500">This may take a moment for large datasets</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-3">
@@ -41,14 +65,16 @@ const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling }: Props) =>
         onDragLeave={() => setDragOver(false)}
         onDrop={handleDrop}
         onClick={() => inputRef.current?.click()}
-        className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-8 cursor-pointer transition-colors ${
+        className={`group flex flex-col items-center justify-center rounded-xl border-2 border-dashed cursor-pointer transition-all duration-300 ${
+          centered ? "p-12" : "p-8"
+        } ${
           dragOver
-            ? "border-blue-400 bg-blue-950/40"
-            : "border-gray-600 hover:border-gray-400 bg-gray-900/50"
+            ? "border-red-500 bg-red-950/30 scale-[1.02]"
+            : "border-gray-600 hover:border-red-500/60 hover:bg-red-950/10 bg-black/30"
         }`}
       >
         <svg
-          className="w-10 h-10 mb-2 text-gray-400"
+          className={`mb-3 text-gray-400 transition-colors group-hover:text-red-400 ${centered ? "w-14 h-14" : "w-10 h-10"}`}
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
@@ -56,15 +82,14 @@ const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling }: Props) =>
           <path
             strokeLinecap="round"
             strokeLinejoin="round"
-            strokeWidth={2}
+            strokeWidth={1.5}
             d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"
           />
         </svg>
-        <p className="text-sm text-gray-300">
-          Drag &amp; drop a <span className="font-semibold">.csv</span> file
-          here, or click to browse
+        <p className={`font-medium text-white ${centered ? "text-base" : "text-sm"}`}>
+          Drag &amp; drop a <span className="font-bold text-red-400">.csv</span> file
         </p>
-        <p className="text-xs text-gray-500 mt-1">Max 10 MB</p>
+        <p className="text-xs text-gray-500 mt-1">or click to browse · Auto-analyzes on drop</p>
         <input
           id="csv-input-trigger"
           ref={inputRef}
@@ -74,27 +99,6 @@ const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling }: Props) =>
           onChange={handleSelect}
         />
       </div>
-
-      {file && (
-        <div className="flex items-center justify-between rounded-lg bg-gray-800 px-4 py-2">
-          <span className="text-sm truncate">{file.name}</span>
-          <span className="text-xs text-gray-400 ml-2">
-            {(file.size / 1024).toFixed(1)} KB
-          </span>
-        </div>
-      )}
-
-      <button
-        disabled={!file || busy}
-        onClick={() => file && onUpload(file)}
-        className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-blue-500 disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        {uploading
-          ? "Uploading…"
-          : polling
-          ? "Analyzing…"
-          : "Analyze Transactions"}
-      </button>
     </div>
   );
 };

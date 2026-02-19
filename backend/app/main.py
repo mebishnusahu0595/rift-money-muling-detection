@@ -88,6 +88,15 @@ def _run_analysis(analysis_id: str, df: pd.DataFrame) -> None:
     try:
         start = time.time()
 
+        # 0. Sanitise numeric / datetime columns up-front so every
+        #    downstream consumer (cycle_detector, smurfing_detector, …)
+        #    receives clean data.  Also drop any stray duplicate-header
+        #    rows that sometimes appear in concatenated CSVs.
+        df = df.copy()
+        df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        df = df.dropna(subset=["timestamp"])
+
         # 1. Build graph
         G = build_graph(df)
 

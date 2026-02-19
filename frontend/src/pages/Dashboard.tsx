@@ -3,6 +3,8 @@ import FileUpload from "../components/FileUpload";
 import GraphViz from "../components/GraphViz";
 import RingTable from "../components/RingTable";
 import JsonDownload from "../components/JsonDownload";
+import Logo from "../components/Logo";
+import Aurora from "../components/Aurora";
 import { useAnalysis } from "../hooks/useAnalysis";
 import type { SuspiciousAccount } from "../types";
 
@@ -38,7 +40,7 @@ const IconChevron = () => (
   </svg>
 );
 const IconNetwork = () => (
-  <svg className="h-4 w-4 text-blue-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+  <svg className="h-4 w-4 text-red-400" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
     <circle cx="5" cy="12" r="2"/><circle cx="19" cy="5" r="2"/><circle cx="19" cy="19" r="2"/>
     <path d="M7 12h5m2-5.5L12 12m2 5.5L12 12"/>
   </svg>
@@ -64,12 +66,13 @@ const Dashboard: React.FC = () => {
   const [zoomToNodes, setZoomToNodes] = useState<string[] | undefined>(undefined);
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
-  const [maxNodes, setMaxNodes] = useState(500);
-  const [sliderMaxNodes, setSliderMaxNodes] = useState(500);
+  const [maxNodes, setMaxNodes] = useState(0);
+  const [sliderMaxNodes, setSliderMaxNodes] = useState(0);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickedNodeRef = useRef<string | null>(null);
   const lastClickedRingRef = useRef<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [showUploadScreen, setShowUploadScreen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"suspicious" | "rings">("suspicious");
   const [highlightedRingMembers, setHighlightedRingMembers] = useState<string[] | undefined>(undefined);
   const highlightedRingIdRef = useRef<string | null>(null);
@@ -79,6 +82,11 @@ const Dashboard: React.FC = () => {
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
   const startHRef = useRef(0);
+
+  /* Auto-dismiss upload screen when results arrive */
+  useEffect(() => {
+    if (result && showUploadScreen) setShowUploadScreen(false);
+  }, [result, showUploadScreen]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
@@ -283,20 +291,12 @@ const Dashboard: React.FC = () => {
     : [];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0d1117] text-gray-100">
+    <div className="flex h-screen overflow-hidden bg-black text-gray-100">
       {/* ── LEFT SIDEBAR ─────────────────────────────────────────── */}
-      <aside className="flex w-56 shrink-0 flex-col border-r border-gray-800 bg-[#10161e]">
+      <aside className="flex w-56 shrink-0 flex-col border-r border-gray-800 bg-[#0a0a0a]">
         {/* Logo */}
-        <div className="flex items-center gap-2.5 border-b border-gray-800 px-4 py-4">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-600">
-            <svg className="h-4 w-4 text-white" fill="currentColor" viewBox="0 0 24 24">
-              <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
-            </svg>
-          </div>
-          <div>
-            <p className="text-xs font-bold leading-none text-white">Financial Forensics</p>
-            <p className="text-[10px] text-gray-500">Money Muling v1.0</p>
-          </div>
+        <div className="border-b border-gray-800 px-4 py-4">
+          <Logo size={32} />
         </div>
 
         {/* Upload area */}
@@ -306,7 +306,7 @@ const Dashboard: React.FC = () => {
 
         {/* Status */}
         {isAnalysing && (
-          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-blue-950/60 px-3 py-2 text-xs text-blue-300">
+          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-red-950/40 px-3 py-2 text-xs text-red-300">
             <svg className="h-3 w-3 animate-spin" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"/>
@@ -355,29 +355,51 @@ const Dashboard: React.FC = () => {
             />
 
             {/* Max visible nodes slider */}
-            {graphData && graphData.nodes.length > 100 && (
+            {graphData && graphData.nodes.length > 50 && (
               <>
-                <label className="mb-1 mt-3 block text-[10px] text-gray-400">
-                  Max Visible Nodes
+                <label className="mb-1 mt-3 flex items-center justify-between text-[10px] text-gray-400">
+                  <span>Max Visible Nodes</span>
+                  <label className="flex cursor-pointer items-center gap-1">
+                    <input
+                      type="checkbox"
+                      className="accent-red-500 h-3 w-3"
+                      checked={sliderMaxNodes <= 0 || sliderMaxNodes >= graphData.nodes.length}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSliderMaxNodes(0);
+                          setMaxNodes(0);
+                        } else {
+                          const v = Math.min(2000, graphData.nodes.length);
+                          setSliderMaxNodes(v);
+                          setMaxNodes(v);
+                        }
+                      }}
+                    />
+                    <span className="text-red-400 font-medium">All</span>
+                  </label>
                 </label>
-                <input
-                  type="range"
-                  min={50}
-                  max={Math.max(graphData.nodes.length, 50)}
-                  step={50}
-                  value={Math.min(sliderMaxNodes, graphData.nodes.length)}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setSliderMaxNodes(v);
-                    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
-                    debounceTimerRef.current = setTimeout(() => setMaxNodes(v), 300);
-                  }}
-                  className="w-full accent-blue-500"
-                />
-                <div className="flex items-center justify-between text-[10px] text-gray-500">
-                  <span>{sliderMaxNodes >= graphData.nodes.length ? "All" : sliderMaxNodes}</span>
-                  <span>of {graphData.nodes.length}</span>
-                </div>
+                {sliderMaxNodes > 0 && sliderMaxNodes < graphData.nodes.length && (
+                  <>
+                    <input
+                      type="range"
+                      min={50}
+                      max={graphData.nodes.length}
+                      step={Math.max(1, Math.floor(graphData.nodes.length / 200))}
+                      value={sliderMaxNodes}
+                      onChange={(e) => {
+                        const v = Number(e.target.value);
+                        setSliderMaxNodes(v);
+                        if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                        debounceTimerRef.current = setTimeout(() => setMaxNodes(v), 300);
+                      }}
+                      className="w-full accent-red-500"
+                    />
+                    <div className="flex items-center justify-between text-[10px] text-gray-500">
+                      <span>{sliderMaxNodes.toLocaleString()}</span>
+                      <span>of {graphData.nodes.length.toLocaleString()}</span>
+                    </div>
+                  </>
+                )}
               </>
             )}
           </div>
@@ -385,16 +407,16 @@ const Dashboard: React.FC = () => {
 
         {/* Footer */}
         <div className="border-t border-gray-800 px-3 py-2 text-[9px] text-gray-600">
-          RIFT 2026 · Financial Forensics
+          RIFT 2026 · Money Muling Detector
         </div>
       </aside>
 
       {/* ── MAIN AREA ─────────────────────────────────────────────── */}
       <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
         {/* Top bar */}
-        <header className="flex shrink-0 items-center justify-between border-b border-gray-800 bg-[#10161e] px-5 py-3">
+        <header className="flex shrink-0 items-center justify-between border-b border-gray-800 bg-[#0a0a0a] px-5 py-3">
           <div className="flex items-center gap-3">
-            <span className="text-sm font-semibold text-gray-100">Financial Forensics Engine</span>
+            <span className="text-sm font-semibold text-white">Money Muling Detector</span>
             {result && (
               <span className="flex items-center gap-1 rounded-full bg-green-900/50 px-2 py-0.5 text-[10px] font-medium text-green-400">
                 <span className="h-1.5 w-1.5 rounded-full bg-green-400"/>Complete
@@ -407,7 +429,7 @@ const Dashboard: React.FC = () => {
             )}
             <button
               onClick={() => document.getElementById("csv-input-trigger")?.click()}
-              className="flex items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-blue-500 transition-colors"
+              className="flex items-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-red-500 transition-colors"
             >
               <IconUpload /> Upload CSV
             </button>
@@ -421,13 +443,19 @@ const Dashboard: React.FC = () => {
           </div>
         )}
 
-        {/* No result — centered upload prompt */}
+        {/* No result — centered prompt */}
         {!result && !isAnalysing && (
           <div className="flex flex-1 flex-col items-center justify-center gap-4 text-gray-500">
-            <svg className="h-12 w-12 text-gray-700" fill="none" stroke="currentColor" strokeWidth={1} viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M9 17v-2m3 2v-4m3 4v-6M5 21h14a2 2 0 002-2V7l-5-5H5a2 2 0 00-2 2v15a2 2 0 002 2z"/>
-            </svg>
-            <p className="text-sm">Upload a CSV from the sidebar and click <strong className="text-gray-300">Run Detection</strong></p>
+            <Logo size={56} showText={false} />
+            <p className="text-sm text-gray-400">
+              Drop a CSV file to start detection
+            </p>
+            <button
+              onClick={() => setShowUploadScreen(true)}
+              className="rounded-lg bg-red-600 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-red-500"
+            >
+              Upload CSV
+            </button>
           </div>
         )}
 
@@ -444,7 +472,7 @@ const Dashboard: React.FC = () => {
                   ["FRAUD RINGS DETECTED", result.summary.fraud_rings_detected, "text-red-400", <IconRing key="r"/>],
                   ["PROCESSING TIME", `${result.summary.processing_time_seconds.toFixed(2)}s`, "text-green-400", <IconBolt key="b"/>],
                 ] as [string, string | number, string, React.ReactNode][]).map(([label, value, color, icon]) => (
-                  <div key={label} className="rounded-xl border border-gray-800 bg-[#161c26] px-4 py-3">
+                  <div key={label} className="rounded-xl border border-gray-800 bg-[#111] px-4 py-3">
                     <div className="mb-1 flex items-center justify-between text-[10px] font-semibold uppercase tracking-widest text-gray-500">
                       <span>{label}</span>{icon}
                     </div>
@@ -454,11 +482,11 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* Transaction Flow Map (graph) */}
-              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-[#161c26]">
+              <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-gray-800 bg-[#111]">
                 <div className="flex shrink-0 items-center gap-3 border-b border-gray-800 px-4 py-2.5">
                   <IconNetwork />
                   <span className="text-xs font-semibold uppercase tracking-wider text-gray-300">Transaction Flow Map</span>
-                  <span className="rounded-full bg-blue-900/60 px-2 py-0.5 text-[10px] font-semibold text-blue-300">
+                  <span className="rounded-full bg-red-900/60 px-2 py-0.5 text-[10px] font-semibold text-red-300">
                     {result.summary.total_accounts_analyzed} ACCOUNTS
                   </span>
                   {filteredGraphData && graphData && filteredGraphData.nodes.length < graphData.nodes.length && (
@@ -493,7 +521,7 @@ const Dashboard: React.FC = () => {
                   className="absolute -top-2 left-0 right-0 z-20 flex h-4 cursor-ns-resize items-center justify-center group"
                   title="Drag to resize"
                 >
-                  <span className="flex items-center gap-[3px] rounded-full bg-gray-700/80 px-3 py-[2px] transition-colors group-hover:bg-blue-600/80">
+                  <span className="flex items-center gap-[3px] rounded-full bg-gray-700/80 px-3 py-[2px] transition-colors group-hover:bg-red-600/80">
                     <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
                     <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
                     <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
@@ -519,7 +547,7 @@ const Dashboard: React.FC = () => {
             </div>
 
             {/* Right sidebar — suspicious accounts + fraud rings tabs */}
-            <aside className="flex w-64 shrink-0 flex-col border-l border-gray-800 bg-[#10161e] overflow-hidden">
+            <aside className="flex w-64 shrink-0 flex-col border-l border-gray-800 bg-[#0a0a0a] overflow-hidden">
               {/* Tab Header */}
               <div className="flex shrink-0 border-b border-gray-800">
                 <button
@@ -623,7 +651,7 @@ const Dashboard: React.FC = () => {
                             <tbody className="divide-y divide-gray-800">
                               {memberRings.map((ring) => (
                                 <tr key={`${ring.ring_id}_${ring.pattern_type}`} className="hover:bg-gray-800/40">
-                                  <td className="whitespace-nowrap px-2 py-1.5 font-mono text-blue-400">{ring.ring_id}</td>
+                                  <td className="whitespace-nowrap px-2 py-1.5 font-mono text-red-400">{ring.ring_id}</td>
                                   <td className="whitespace-nowrap px-2 py-1.5 capitalize">{ring.pattern_type.replace(/_/g, " ")}</td>
                                   <td className="px-2 py-1.5 text-center">{ring.member_accounts.length}</td>
                                   <td className="px-2 py-1.5 text-center">
@@ -708,7 +736,7 @@ const Dashboard: React.FC = () => {
                         ) : (
                           <p className="truncate text-[10px] text-gray-500">
                             {acct.detected_patterns[0]
-                              ? <span className="text-blue-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
+                              ? <span className="text-red-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
                               : "—"
                             }
                           </p>
@@ -768,41 +796,101 @@ const Dashboard: React.FC = () => {
       </div>
 
       {/* ── WELCOME POPUP ── */}
-      {showWelcome && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-gray-700 bg-gradient-to-b from-[#1a2332] to-[#0d1117] shadow-2xl">
+      {showWelcome && !showUploadScreen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 backdrop-blur-sm">
+          {/* Aurora background */}
+          <Aurora
+            colorStops={["#a51d2d", "#ffffff", "#a51d2d"]}
+            blend={1}
+            amplitude={1.0}
+            speed={2}
+          />
+          <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-gray-800 bg-black/80 shadow-2xl animate-[fadeScale_0.5s_ease-out]">
             {/* Header illustration */}
-            <div className="relative flex h-44 items-center justify-center overflow-hidden bg-gradient-to-br from-blue-600/20 via-indigo-600/20 to-purple-600/20">
-              <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-blue-500/10" />
-              <div className="absolute -right-10 bottom-0 h-32 w-32 rounded-full bg-indigo-500/10" />
-              <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25">
-                <svg className="h-12 w-12 text-white" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
-                </svg>
-              </div>
+            <div className="relative flex h-44 items-center justify-center overflow-hidden bg-gradient-to-br from-red-600/10 via-black to-red-900/10">
+              <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-red-500/5" />
+              <div className="absolute -right-10 bottom-0 h-32 w-32 rounded-full bg-red-500/5" />
+              <Logo size={80} showText={false} />
             </div>
             {/* Content */}
             <div className="px-8 py-6 text-center">
-              <h2 className="mb-1 text-xl font-bold text-white">Financial Forensics Engine</h2>
-              <p className="mb-4 text-sm text-gray-400">Money Muling Detection System v1.0</p>
+              <h2 className="mb-1 text-xl font-bold text-white">Money Muling Detector</h2>
+              <p className="mb-4 text-sm text-gray-400">Financial Forensics Engine v1.0</p>
               <p className="mb-5 text-xs leading-relaxed text-gray-500">
                 Upload transaction CSVs to detect fraud rings, money muling patterns, and
                 suspicious accounts using advanced network analysis and graph-based detection.
               </p>
               <div className="mb-6 flex flex-wrap justify-center gap-2">
-                <span className="rounded-full border border-blue-800/50 bg-blue-900/30 px-3 py-1 text-[11px] text-blue-300">Pattern Detection</span>
-                <span className="rounded-full border border-purple-800/50 bg-purple-900/30 px-3 py-1 text-[11px] text-purple-300">Network Analysis</span>
-                <span className="rounded-full border border-yellow-800/50 bg-yellow-900/30 px-3 py-1 text-[11px] text-yellow-300">Risk Scoring</span>
-                <span className="rounded-full border border-green-800/50 bg-green-900/30 px-3 py-1 text-[11px] text-green-300">Visual Analytics</span>
+                <span className="rounded-full border border-red-800/50 bg-red-900/20 px-3 py-1 text-[11px] text-red-300">Pattern Detection</span>
+                <span className="rounded-full border border-gray-700/50 bg-gray-900/30 px-3 py-1 text-[11px] text-gray-300">Network Analysis</span>
+                <span className="rounded-full border border-red-800/50 bg-red-900/20 px-3 py-1 text-[11px] text-red-300">Risk Scoring</span>
+                <span className="rounded-full border border-gray-700/50 bg-gray-900/30 px-3 py-1 text-[11px] text-gray-300">Visual Analytics</span>
               </div>
               <button
-                onClick={() => setShowWelcome(false)}
-                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition-all hover:from-blue-500 hover:to-indigo-500 hover:shadow-blue-500/30"
+                onClick={() => {
+                  setShowWelcome(false);
+                  setShowUploadScreen(true);
+                }}
+                className="w-full rounded-xl bg-gradient-to-r from-red-600 to-red-700 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-red-600/25 transition-all hover:from-red-500 hover:to-red-600 hover:shadow-red-500/30"
               >
                 Get Started →
               </button>
               <p className="mt-4 text-[10px] text-gray-600">RIFT 2026 · Financial Forensics Challenge</p>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── CENTERED UPLOAD SCREEN (shown after Get Started) ── */}
+      {showUploadScreen && !result && !isAnalysing && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm">
+          {/* Aurora background */}
+          <Aurora
+            colorStops={["#a51d2d", "#ffffff", "#a51d2d"]}
+            blend={1}
+            amplitude={1.0}
+            speed={2}
+          />
+          <div className="relative z-10 mx-4 w-full max-w-lg animate-[fadeSlideUp_0.6s_ease-out]">
+            <div className="mb-6 flex justify-center">
+              <Logo size={48} />
+            </div>
+            <h2 className="mb-2 text-center text-2xl font-bold text-white">Upload Transaction Data</h2>
+            <p className="mb-8 text-center text-sm text-gray-500">
+              Drop your CSV file below — analysis starts automatically
+            </p>
+            <FileUpload
+              onUpload={(file) => {
+                setShowUploadScreen(false);
+                upload(file);
+              }}
+              uploading={false}
+              polling={false}
+              centered
+            />
+            <p className="mt-6 text-center text-[10px] text-gray-600">
+              Supported: CSV files with transaction data · Auto-detects fraud rings & suspicious patterns
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── CENTERED LOADING SCREEN (uploading/polling after centered upload) ── */}
+      {showUploadScreen && isAnalysing && !result && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/95 backdrop-blur-sm">
+          <Aurora
+            colorStops={["#a51d2d", "#ffffff", "#a51d2d"]}
+            blend={1}
+            amplitude={1.0}
+            speed={2}
+          />
+          <div className="relative z-10 flex flex-col items-center gap-4">
+            <Logo size={48} showText={false} />
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-red-900 border-t-red-500" />
+            <p className="text-lg font-semibold text-white">
+              {uploading ? "Uploading…" : "Analyzing transactions…"}
+            </p>
+            <p className="text-sm text-gray-500">Detecting fraud rings and suspicious patterns</p>
           </div>
         </div>
       )}

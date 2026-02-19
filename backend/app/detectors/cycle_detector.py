@@ -50,6 +50,12 @@ def detect_cycles(
     simple_G.add_edges_from(set(G.edges()))
 
     # Build a fast look-up: (sender, receiver) → list of (amount, timestamp)
+    # Ensure amount is numeric in case the caller hasn't sanitised the df.
+    df = df.copy()
+    df["amount"] = pd.to_numeric(df["amount"], errors="coerce").fillna(0)
+    df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+    df = df.dropna(subset=["timestamp"])
+
     edge_data: dict[tuple[str, str], list[tuple[float, pd.Timestamp]]] = {}
     for _, row in df.iterrows():
         key = (str(row["sender"]), str(row["receiver"]))
