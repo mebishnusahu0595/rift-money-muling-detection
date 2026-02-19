@@ -121,6 +121,7 @@ public:
                 ring_map[s.account_id].push_back(s.ring_id);
                 pattern_map[s.account_id].push_back(s.pattern_type);
                 spec_patterns[s.account_id].insert(s.pattern_type); // "fan_in"/"fan_out"
+                spec_patterns[s.account_id].insert("temporal_concentration"); // 72h window evidence
                 if (s.velocity_per_hour > 5000.0)
                     spec_patterns[s.account_id].insert("high_velocity");
             }
@@ -128,7 +129,8 @@ public:
                 for (const auto& n : s.chain) {
                     ring_map[n].push_back(s.ring_id);
                     pattern_map[n].push_back("shell");
-                    spec_patterns[n].insert("shell");
+                    spec_patterns[n].insert("layered_shell");
+                    spec_patterns[n].insert("shell"); 
                 }
             }
 

@@ -112,6 +112,9 @@ private:
     // ── Merchant: many small inflows, fewer larger outflows ────────────
     static bool is_merchant(const std::vector<const Transaction*>& inc,
                             const std::vector<const Transaction*>& out) {
+        // Name check fallback (optimization)
+        if (!inc.empty() && looks_like_business(inc[0]->receiver)) return true;
+
         if (inc.size() < 20) return false;
 
         double sum_in = 0;
@@ -136,6 +139,13 @@ private:
         }
         double round_ratio = (double)round_count / (double)inc.size();
         return round_ratio > 0.3;
+    }
+
+    static bool looks_like_business(const std::string& id) {
+        static const std::regex biz_pat(
+            "(corp|inc|llc|ltd|co\\b|merchant|store|shop|pay|bank|services|mart|pvt)",
+            std::regex::icase | std::regex::optimize);
+        return std::regex_search(id, biz_pat);
     }
 
     // ── Salary: one large monthly deposit + regular outgoing bills ─────
