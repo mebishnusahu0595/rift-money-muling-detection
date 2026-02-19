@@ -11,7 +11,7 @@
 
 ## 🌐 Live Demo
 
-> **URL:** *(Deploy URL — e.g., `https://pwioi.vercel.app`)*  
+> **URL:** *(Deploy URL — e.g., `https://rift-money-muling-detection.vercel.app/`)*  
 > Upload any CSV with the format below and get instant fraud analysis.
 
 ---
