@@ -114,6 +114,31 @@ class AnalysisResult(BaseModel):
     summary: Summary
 
 
+# ── Strict export models (RIFT spec — only these fields allowed) ─────────────
+
+class SuspiciousAccountExport(BaseModel):
+    """Strict RIFT spec fields only — used for downloadable JSON."""
+    account_id: str
+    suspicion_score: float
+    detected_patterns: List[str]
+    ring_id: str
+
+
+class SummaryExport(BaseModel):
+    """RIFT spec summary — no total_transaction_volume."""
+    total_accounts_analyzed: int
+    suspicious_accounts_flagged: int
+    fraud_rings_detected: int
+    processing_time_seconds: float
+
+
+class AnalysisResultExport(BaseModel):
+    """Downloadable JSON — exact RIFT spec schema."""
+    suspicious_accounts: List[SuspiciousAccountExport]
+    fraud_rings: List[FraudRing]
+    summary: SummaryExport
+
+
 class AnalysisStatusResponse(BaseModel):
     analysis_id: str
     status: AnalysisStatus

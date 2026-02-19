@@ -31,10 +31,13 @@ from .filters import apply_filters
 from .graph_builder import build_account_profiles, build_graph, build_graph_data
 from .models import (
     AnalysisResult,
+    AnalysisResultExport,
     AnalysisStatus,
     AnalysisStatusResponse,
     GraphData,
     Summary,
+    SummaryExport,
+    SuspiciousAccountExport,
     UploadResponse,
 )
 from .scoring import build_fraud_rings, build_suspicious_accounts, calculate_scores
@@ -211,7 +214,32 @@ async def download_analysis(analysis_id: str):
 
     ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
     filename = f"analysis_{ts}.json"
-    content = entry.result.model_dump_json(indent=2)
+
+    # Build strict RIFT-spec export — sorted descending by suspicion_score
+    result = entry.result
+    export = AnalysisResultExport(
+        suspicious_accounts=sorted(
+            [
+                SuspiciousAccountExport(
+                    account_id=a.account_id,
+                    suspicion_score=round(a.suspicion_score, 2),
+                    detected_patterns=a.detected_patterns,
+                    ring_id=a.ring_id,
+                )
+                for a in result.suspicious_accounts
+            ],
+            key=lambda x: x.suspicion_score,
+            reverse=True,
+        ),
+        fraud_rings=result.fraud_rings,
+        summary=SummaryExport(
+            total_accounts_analyzed=result.summary.total_accounts_analyzed,
+            suspicious_accounts_flagged=result.summary.suspicious_accounts_flagged,
+            fraud_rings_detected=result.summary.fraud_rings_detected,
+            processing_time_seconds=result.summary.processing_time_seconds,
+        ),
+    )
+    content = export.model_dump_json(indent=2)
 
     return StreamingResponse(
         io.BytesIO(content.encode()),
