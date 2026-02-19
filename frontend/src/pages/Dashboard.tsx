@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef } from "react";
+import React, { useState, useCallback, useRef, useMemo } from "react";
 import FileUpload from "../components/FileUpload";
 import GraphViz from "../components/GraphViz";
 import RingTable from "../components/RingTable";
@@ -65,6 +65,45 @@ const Dashboard: React.FC = () => {
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
   const lastClickedNodeRef = useRef<string | null>(null);
+  const [showWelcome, setShowWelcome] = useState(true);
+
+  /* ── Filtered graph data based on sidebar filters ── */
+  const filteredGraphData = useMemo(() => {
+    if (!graphData || !result) return graphData;
+    let nodes = graphData.nodes;
+    let edges = graphData.edges;
+
+    // Pattern filter — keep members of matching rings + their direct neighbours
+    if (patternFilter !== "all") {
+      const matchingRings = result.fraud_rings.filter(
+        (r) => r.pattern_type === patternFilter
+      );
+      const ringMembers = new Set(matchingRings.flatMap((r) => r.member_accounts));
+      const neighbours = new Set<string>();
+      edges.forEach((e) => {
+        if (ringMembers.has(e.source)) neighbours.add(e.target);
+        if (ringMembers.has(e.target)) neighbours.add(e.source);
+      });
+      const visible = new Set([...ringMembers, ...neighbours]);
+      nodes = nodes.filter((n) => visible.has(n.id));
+      const nodeIds = new Set(nodes.map((n) => n.id));
+      edges = edges.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target));
+    }
+
+    // Min amount filter
+    if (minAmount > 0) {
+      edges = edges.filter((e) => e.amount >= minAmount);
+      const connected = new Set<string>();
+      edges.forEach((e) => {
+        connected.add(e.source);
+        connected.add(e.target);
+      });
+      nodes = nodes.filter((n) => connected.has(n.id));
+    }
+
+    if (nodes === graphData.nodes && edges === graphData.edges) return graphData;
+    return { nodes, edges };
+  }, [graphData, result, patternFilter, minAmount]);
 
   const handleNodeClick = useCallback(
     (nodeId: string) => {
@@ -291,13 +330,11 @@ const Dashboard: React.FC = () => {
                   </span>
                 </div>
                 <div className="min-h-0 flex-1">
-                  {graphData ? (
+                  {filteredGraphData ? (
                     <GraphViz
-                      data={graphData}
+                      data={filteredGraphData}
                       onNodeClick={handleNodeClick}
                       zoomTo={zoomToNodes}
-                      patternFilter={patternFilter}
-                      minAmount={minAmount}
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-gray-600">Loading graph…</div>
@@ -446,6 +483,46 @@ const Dashboard: React.FC = () => {
           </div>
         )}
       </div>
+
+      {/* ── WELCOME POPUP ── */}
+      {showWelcome && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="relative mx-4 w-full max-w-md overflow-hidden rounded-2xl border border-gray-700 bg-gradient-to-b from-[#1a2332] to-[#0d1117] shadow-2xl">
+            {/* Header illustration */}
+            <div className="relative flex h-44 items-center justify-center overflow-hidden bg-gradient-to-br from-blue-600/20 via-indigo-600/20 to-purple-600/20">
+              <div className="absolute -left-10 -top-10 h-40 w-40 rounded-full bg-blue-500/10" />
+              <div className="absolute -right-10 bottom-0 h-32 w-32 rounded-full bg-indigo-500/10" />
+              <div className="flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25">
+                <svg className="h-12 w-12 text-white" fill="none" stroke="currentColor" strokeWidth={1.5} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
+                </svg>
+              </div>
+            </div>
+            {/* Content */}
+            <div className="px-8 py-6 text-center">
+              <h2 className="mb-1 text-xl font-bold text-white">Financial Forensics Engine</h2>
+              <p className="mb-4 text-sm text-gray-400">Money Muling Detection System v1.0</p>
+              <p className="mb-5 text-xs leading-relaxed text-gray-500">
+                Upload transaction CSVs to detect fraud rings, money muling patterns, and
+                suspicious accounts using advanced network analysis and graph-based detection.
+              </p>
+              <div className="mb-6 flex flex-wrap justify-center gap-2">
+                <span className="rounded-full border border-blue-800/50 bg-blue-900/30 px-3 py-1 text-[11px] text-blue-300">🔍 Pattern Detection</span>
+                <span className="rounded-full border border-purple-800/50 bg-purple-900/30 px-3 py-1 text-[11px] text-purple-300">🕸️ Network Analysis</span>
+                <span className="rounded-full border border-yellow-800/50 bg-yellow-900/30 px-3 py-1 text-[11px] text-yellow-300">⚠️ Risk Scoring</span>
+                <span className="rounded-full border border-green-800/50 bg-green-900/30 px-3 py-1 text-[11px] text-green-300">📊 Visual Analytics</span>
+              </div>
+              <button
+                onClick={() => setShowWelcome(false)}
+                className="w-full rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-600/25 transition-all hover:from-blue-500 hover:to-indigo-500 hover:shadow-blue-500/30"
+              >
+                Get Started →
+              </button>
+              <p className="mt-4 text-[10px] text-gray-600">RIFT 2026 · Financial Forensics Challenge</p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

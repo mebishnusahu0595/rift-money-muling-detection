@@ -10,10 +10,6 @@ interface Props {
   onNodeClick: (nodeId: string) => void;
   /** Optional: zoom graph to a set of node IDs */
   zoomTo?: string[];
-  /** Filter nodes by pattern type — "all" or specific pattern name */
-  patternFilter?: string;
-  /** Hide edges with amount below this value */
-  minAmount?: number;
 }
 
 const RING_COLORS = [
@@ -28,7 +24,7 @@ function dataKey(d: GraphData) {
 
 // ── component ──────────────────────────────────────────────────────────────
 
-export default function GraphViz({ data, onNodeClick, zoomTo, patternFilter = "all", minAmount = 0 }: Props) {
+export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   const cyRef = useRef<Core | null>(null);
   const [showNormal, setShowNormal] = useState(true);
   const [minScore, setMinScore] = useState(0);
@@ -49,10 +45,10 @@ export default function GraphViz({ data, onNodeClick, zoomTo, patternFilter = "a
     const nodeEls = data.nodes.map((n: GraphNode) => {
       const score = n.suspicion_score;
       let color = "#3d4a5c";
-      let size = 10;
+      let size = 15;
       let icon = iconNormal;
-      if (score > 70) { color = "#ef4444"; size = 18; icon = iconHighRisk; }
-      else if (score > 0) { color = "#d97706"; size = 14; icon = iconSuspicious; }
+      if (score > 70) { color = "#ef4444"; size = 23; icon = iconHighRisk; }
+      else if (score > 0) { color = "#d97706"; size = 19; icon = iconSuspicious; }
 
       const ringColor =
         n.ring_ids.length > 0
@@ -74,7 +70,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo, patternFilter = "a
         source: e.source,
         target: e.target,
         amount: e.amount,
-        width: Math.max(1, Math.min(5, e.amount / 3000)),
+        width: Math.max(0.5, Math.min(2.5, e.amount / 5000)),
       },
     }));
 
@@ -90,23 +86,23 @@ export default function GraphViz({ data, onNodeClick, zoomTo, patternFilter = "a
           "background-color": "data(color)" as string,
           "background-image": "data(icon)" as string,
           "background-fit": "cover" as const,
-          "background-clip": "none" as const,
           width: "data(size)" as unknown as number,
           height: "data(size)" as unknown as number,
-          "font-size": "9px",
+          "font-size": "4px",
           "font-family": "Inter, 'Helvetica Neue', Arial, sans-serif",
           "font-weight": 500,
           color: "#e2e8f0",
           "text-valign": "bottom" as const,
           "text-halign": "center" as const,
-          "text-margin-y": 3,
-          "border-width": 2,
+          "text-margin-y": 2,
+          "border-width": 1.5,
           "border-color": "data(ringColor)" as string,
           "text-outline-width": 0,
           "text-background-color": "#0d1117",
           "text-background-opacity": 0.75,
-          "text-background-padding": "2px",
+          "text-background-padding": "1px",
           "text-background-shape": "roundrectangle" as const,
+          "min-zoomed-font-size": 4,
           "overlay-opacity": 0,
         },
       },
@@ -117,11 +113,12 @@ export default function GraphViz({ data, onNodeClick, zoomTo, patternFilter = "a
           "line-color": "#4a6fa5",
           "target-arrow-color": "#4a6fa5",
           "target-arrow-shape": "triangle" as const,
+          "arrow-scale": 0.6,
           "curve-style": "bezier" as const,
           "line-style": "dashed" as const,
-          "line-dash-pattern": [6, 3] as unknown as number,
+          "line-dash-pattern": [4, 2] as unknown as number,
           "line-dash-offset": 0,
-          opacity: 0.7,
+          opacity: 0.6,
         },
       },
       {
@@ -151,24 +148,21 @@ export default function GraphViz({ data, onNodeClick, zoomTo, patternFilter = "a
     const toHide = all.filter((n) => {
       const isNormal: boolean = n.data("isNormal");
       const score: number = n.data("score");
-      const patterns: string[] = n.data("patterns") ?? [];
-      const patternMatch = patternFilter === "all" || patterns.includes(patternFilter);
-      return (!showNormal && isNormal) || score < minScore || !patternMatch;
+      return (!showNormal && isNormal) || score < minScore;
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (toHide as any).hide();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (all.not(toHide) as any).show();
     const hiddenNodes = cy.nodes(":hidden");
-    const edgesToHide = cy.edges().filter((e) => {
-      const amount: number = e.data("amount") ?? 0;
-      return hiddenNodes.has(e.source()) || hiddenNodes.has(e.target()) || amount < minAmount;
-    });
+    const edgesToHide = cy.edges().filter((e) =>
+      hiddenNodes.has(e.source()) || hiddenNodes.has(e.target())
+    );
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (edgesToHide as any).hide();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     (cy.edges().not(edgesToHide) as any).show();
-  }, [showNormal, minScore, patternFilter, minAmount]);
+  }, [showNormal, minScore]);
 
   // ── Animated edge flow ────────────────────────────────────────────────
   useEffect(() => {
@@ -243,18 +237,19 @@ export default function GraphViz({ data, onNodeClick, zoomTo, patternFilter = "a
         name: "cose",
         animate: false,
         randomize: true,
-        nodeRepulsion: () => Math.max(100000, nodeCount * 18000),
-        idealEdgeLength: () => Math.max(280, nodeCount * 40),
-        nodeOverlap: 20,
-        gravity: 0.05,
-        numIter: 5000,
-        componentSpacing: 500,
-        padding: 80,
-        coolingFactor: 0.95,
+        nodeRepulsion: () => Math.max(6000, nodeCount * 1500),
+        idealEdgeLength: () => Math.max(60, nodeCount * 6),
+        nodeOverlap: 8,
+        gravity: 0.25,
+        numIter: 3000,
+        componentSpacing: 100,
+        padding: 50,
       } as never).run();
 
-      // Fit after layout
-      cy.fit(undefined, 40);
+      // Constrain zoom & fit
+      cy.maxZoom(2.5);
+      cy.minZoom(0.3);
+      cy.fit(undefined, 60);
     },
     // elementDefs identity is stable per data (useMemo keyed on data)
     [elementDefs]
