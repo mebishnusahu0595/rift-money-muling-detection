@@ -315,9 +315,9 @@ Open [http://localhost:5173](http://localhost:5173)
 
 | Dataset Size | Processing Time |
 |---|---|
-| 1,000 rows | ~0.5 seconds |
-| 5,000 rows | ~1–2 seconds |
-| 10,000 rows | ~3–5 seconds |
+| 1,000 rows | ~5-6 seconds |
+| 5,000 rows | ~10–12 seconds |
+| 10,000 rows | ~25–28 seconds |
 
 Parallel pattern detection (cycles + smurfing + shells run concurrently via `std::async`) plus RBT-based O(N log N) algorithms makes large datasets feasible well within the 30-second requirement.
 
@@ -336,12 +336,12 @@ Parallel pattern detection (cycles + smurfing + shells run concurrently via `std
 
 ## 👥 Team Members
 
-| Name | Role |
-|---|---|
-| Bishnu Prasad Sahu | Full-stack dev · C++ backend · Graph algorithms |
+| Name |
+|---|
+| Bishnu Prasad Sahu |
+| Arpit |
+| Garvita Gupta |
+| Deepika Tandulkar |
 
 ---
 
-## 📄 License
-
-MIT © 2024 PWIOI Team
