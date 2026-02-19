@@ -23,6 +23,12 @@ export default function GraphViz({ data, onNodeClick }: Props) {
   const [minScore, setMinScore] = useState(0);
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const focusedRef = useRef<string | null>(null);
+  // stable ref so tap-handler never goes stale without re-registering
+  const onNodeClickRef = useRef(onNodeClick);
+  useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
+  // track which data version we last laid out so we don't re-run on re-renders
+  const layoutDataSig = useRef<string>("");
+  const listenersAttached = useRef(false);
 
   const elements = useMemo(() => {
     // Person SVG icons encoded as data URIs
@@ -160,45 +166,57 @@ export default function GraphViz({ data, onNodeClick }: Props) {
       cyRef.current = cy;
       (cy as any).__focusMode = focusModeEnabled;
 
-      cy.on("tap", "node", (e: EventObject) => {
-        const id: string = e.target.id();
-        const fm = (cy as any).__focusMode;
-        if (fm) {
-          if (focusedRef.current === id) {
+      // Register listeners exactly once per cy instance
+      if (!listenersAttached.current) {
+        listenersAttached.current = true;
+
+        cy.on("tap", "node", (e: EventObject) => {
+          const id: string = e.target.id();
+          const fm = (cy as any).__focusMode;
+          if (fm) {
+            if (focusedRef.current === id) {
+              cy.elements().removeClass("dimmed highlighted");
+              focusedRef.current = null;
+            } else {
+              focusedRef.current = id;
+              const hood = cy.getElementById(id).closedNeighborhood();
+              cy.elements().addClass("dimmed").removeClass("highlighted");
+              hood.removeClass("dimmed").addClass("highlighted");
+            }
+          }
+          // always use the ref so we never have a stale closure
+          onNodeClickRef.current(id);
+        });
+
+        cy.on("tap", (e: EventObject) => {
+          if (e.target === cy) {
             cy.elements().removeClass("dimmed highlighted");
             focusedRef.current = null;
-          } else {
-            focusedRef.current = id;
-            const hood = cy.getElementById(id).closedNeighborhood();
-            cy.elements().addClass("dimmed").removeClass("highlighted");
-            hood.removeClass("dimmed").addClass("highlighted");
           }
-        }
-        onNodeClick(id);
-      });
+        });
+      }
 
-      cy.on("tap", (e: EventObject) => {
-        if (e.target === cy) {
-          cy.elements().removeClass("dimmed highlighted");
-          focusedRef.current = null;
-        }
-      });
+      // Run layout ONLY when the data signature changes (not on every re-render)
+      const sig = `${data.nodes.length}-${data.edges.length}`;
+      if (layoutDataSig.current === sig) return;
+      layoutDataSig.current = sig;
 
       const nodeCount = data.nodes.length;
       cy.layout({
         name: "cose",
         animate: false,
-        nodeRepulsion: () => Math.max(12000, nodeCount * 2500),
-        idealEdgeLength: () => Math.max(130, nodeCount * 18),
-        nodeOverlap: 40,
-        gravity: 0.35,
-        numIter: 2000,
-        componentSpacing: 100,
-        padding: 50,
+        nodeRepulsion: () => Math.max(30000, nodeCount * 5000),
+        idealEdgeLength: () => Math.max(220, nodeCount * 28),
+        nodeOverlap: 60,
+        gravity: 0.2,
+        numIter: 3000,
+        componentSpacing: 200,
+        padding: 80,
+        randomize: false,
       } as never).run();
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [onNodeClick, data.nodes.length]
+    [data.nodes.length, data.edges.length]
   );
 
   return (
