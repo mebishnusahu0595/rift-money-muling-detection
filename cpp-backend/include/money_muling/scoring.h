@@ -113,10 +113,12 @@ public:
             result.push_back(std::move(sa));
         }
 
-        // Sort by suspicion_score descending
+        // Sort by suspicion_score descending, then alphabetically by account_id
         std::sort(result.begin(), result.end(),
             [](const SuspiciousAccount& a, const SuspiciousAccount& b) {
-                return a.suspicion_score > b.suspicion_score;
+                if (a.suspicion_score != b.suspicion_score)
+                    return a.suspicion_score > b.suspicion_score;
+                return a.account_id < b.account_id;
             });
 
         return result;

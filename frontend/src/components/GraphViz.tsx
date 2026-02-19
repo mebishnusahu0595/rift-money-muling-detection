@@ -14,6 +14,7 @@ interface Props {
   zoomTo?: string[];
   /** Optional: highlight these node IDs as a fraud ring (red nodes + red edges between them, dim rest) */
   highlightRingNodes?: string[];
+  showLabels?: boolean;
 }
 
 const RING_COLORS = [
@@ -53,7 +54,7 @@ function getLabelLevel(zoom: number): LabelLevel {
 
 // ── component ──────────────────────────────────────────────────────────────
 
-export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highlightRingNodes }: Props) {
+export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highlightRingNodes, showLabels = true }: Props) {
   const cyRef = useRef<Core | null>(null);
   const [showNormal, setShowNormal] = useState(true);
   const [showLowRisk, setShowLowRisk] = useState(true);
@@ -357,8 +358,10 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
       const nodes = cy.$(sel);
       if (nodes.length > 0) {
         if (nodes.length === 1) {
-          // Single node — zoom to 200% centred on it (same as tap handler)
+          // Single node — zoom to 200% centred on it + select it (blue border)
           focusedNodeRef.current = nodes[0].id();
+          cy.elements().unselect();
+          nodes[0].select();
           cy.animate({ zoom: 2.0, center: { eles: nodes }, duration: 450 } as never);
         } else {
           // Multi-node (ring zoom) — fit to show all members
@@ -490,8 +493,9 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
   drawMinimapRef.current = drawMinimap;
 
   // ── Dynamic label updater ─────────────────────────────────────────────
+  // ── Dynamic label updater ─────────────────────────────────────────────
   const updateLabels = useCallback((cy: Core, zoom: number) => {
-    const level = getLabelLevel(zoom);
+    const level = showLabels ? getLabelLevel(zoom) : "none";
     if (level === labelLevel) return; // no change
     setLabelLevel(level);
     cy.startBatch();
@@ -506,7 +510,13 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
       else n.removeClass("show-label");
     });
     cy.endBatch();
-  }, [labelLevel]);
+  }, [labelLevel, showLabels]);
+
+  // When showLabels prop toggles, force update immediately
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (cy) updateLabels(cy, cy.zoom());
+  }, [showLabels, updateLabels]);
 
   // ── cy callback: runs once per mount (key forces remount on new data) ──
   const handleCyReady = useCallback(
@@ -731,8 +741,9 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
             }
 
 
+            // Fix race condition: resolve only when layout stops
+            (layoutOpts as any).stop = () => resolve();
             subgraph.layout({ name: layoutName, ...layoutOpts } as never).run();
-            resolve();
           });
 
           layoutPromises.push(p);
@@ -761,19 +772,39 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
           });
         }
 
-        // After layout: fit to cluster nodes only (not the isolated grid)
-        // This keeps fraud rings visible at a readable zoom instead of 3%
-        const clusterNodeIds = new Set(clusters.flat());
-        const clusterEls = cy.nodes().filter((n) => clusterNodeIds.has(n.id()));
-        if (clusterEls.length > 0) {
-          // User Request: Load at 100% zoom centered on clusters, not "fitted" to tiny dots
-          // This ensures nodes are readable immediately, even if it requires panning
-          cy.center(clusterEls);
-          cy.zoom(1.0);
+        // After layout: fit to specific relevant cluster to avoid blank space
+        // Prioritize largest cluster with suspicious activity
+        let targetClusterIds: string[] | undefined;
+
+        // Find first cluster with a suspicious node (score > 20)
+        // Clusters are sorted by size descending (from BFS/Connected Components logic usually)
+        if (clusters.length > 0) {
+          // Sort clusters by size just in case they aren't fully sorted
+          clusters.sort((a, b) => b.length - a.length);
+
+          for (const c of clusters) {
+            // Check if cluster has any node with score > 20 (suspicious)
+            const hasSuspicious = c.some(id => (cy.getElementById(id).data("score") || 0) > 20);
+            if (hasSuspicious) {
+              targetClusterIds = c;
+              break;
+            }
+          }
+          // Fallback: just use largest cluster if no suspicious found
+          if (!targetClusterIds) targetClusterIds = clusters[0];
+        }
+
+        if (targetClusterIds && targetClusterIds.length > 0) {
+          const targetSet = new Set(targetClusterIds);
+          const targetEls = cy.nodes().filter(n => targetSet.has(n.id()));
+          if (targetEls.length > 0) {
+            cy.fit(targetEls, 40);
+          } else {
+            cy.fit(undefined, 40);
+          }
         } else {
-          // All nodes are isolated
-          cy.center();
-          cy.zoom(1.0);
+          // All isolated or empty — fit everything
+          cy.fit(undefined, 40);
         }
         setLayoutRunning(false);
         setTimeout(drawMinimap, 400);
@@ -784,9 +815,7 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
         try {
           if (nodeCount > 3000) {
             // Very large graph: plain circle — component layout would be too slow
-            cy.layout({ name: "circle", fit: false, animate: false, padding: 20, spacingFactor: 0.5 } as never).run();
-            cy.center();
-            cy.zoom(1.0);
+            cy.layout({ name: "circle", fit: true, animate: false, padding: 20, spacingFactor: 0.5 } as never).run();
             setLayoutRunning(false);
             setTimeout(drawMinimap, 400);
           } else {
@@ -794,21 +823,17 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
           }
         } catch {
           // Fallback to grid if anything explodes
-          cy.layout({ name: "grid", fit: false, animate: false, padding: 30, avoidOverlap: true } as never).run();
-          cy.center();
-          cy.zoom(1.0);
+          cy.layout({ name: "grid", fit: true, animate: false, padding: 30, avoidOverlap: true } as never).run();
           setLayoutRunning(false);
         }
       }, 0);
 
 
-      // Constrain zoom & fit
+      // Constrain zoom range
       cy.maxZoom(10.0);   // 1000%
       cy.minZoom(0.01);   // ~0%
-      cy.fit(undefined, 60);
-      // Reset to 100% zoom centered
-      cy.zoom(1.0);
-      cy.center();
+      // NOTE: do NOT fit/center here — layout runs in setTimeout(0) and
+      // will call cy.fit() when it finishes with correct positions.
 
       // Initial label update
       updateLabels(cy, cy.zoom());

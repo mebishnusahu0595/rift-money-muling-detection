@@ -6,7 +6,7 @@ import JsonDownload from "../components/JsonDownload";
 import Logo from "../components/Logo";
 import Aurora from "../components/Aurora";
 import { useAnalysis } from "../hooks/useAnalysis";
-import type { SuspiciousAccount } from "../types";
+import type { FraudRing, SuspiciousAccount } from "../types";
 
 // ── tiny icon helpers ────────────────────────────────────────────────────────
 const IconGlobe = () => (
@@ -62,8 +62,10 @@ const Dashboard: React.FC = () => {
   const { uploading, polling, analysisId, result, graphData, error, upload, downloadJson } =
     useAnalysis();
 
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
   const [selectedAccount, setSelectedAccount] = useState<SuspiciousAccount | null>(null);
   const [zoomToNodes, setZoomToNodes] = useState<string[] | undefined>(undefined);
+  const [showLabels, setShowLabels] = useState(true);
   const [minAmountInput, setMinAmountInput] = useState(0); // raw input — debounced into minAmount
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
@@ -77,6 +79,7 @@ const Dashboard: React.FC = () => {
   const [showWelcome, setShowWelcome] = useState(true);
   const [showUploadScreen, setShowUploadScreen] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<"suspicious" | "rings">("suspicious");
+  const [selectedRing, setSelectedRing] = useState<FraudRing | null>(null);
   const [highlightedRingMembers, setHighlightedRingMembers] = useState<string[] | undefined>(undefined);
   const highlightedRingIdRef = useRef<string | null>(null);
 
@@ -320,7 +323,9 @@ const Dashboard: React.FC = () => {
     : [];
 
   const suspiciousSorted = result
-    ? [...result.suspicious_accounts].sort((a, b) => b.suspicion_score - a.suspicion_score)
+    ? [...result.suspicious_accounts].sort((a, b) =>
+        b.suspicion_score - a.suspicion_score || a.account_id.localeCompare(b.account_id)
+      )
     : [];
 
   return (
@@ -334,7 +339,7 @@ const Dashboard: React.FC = () => {
 
         {/* Upload area */}
         <div className="p-3">
-          <FileUpload onUpload={upload} uploading={uploading} polling={polling} />
+          <FileUpload onUpload={(file) => { setCsvFileName(file.name); upload(file); }} uploading={uploading} polling={polling} />
         </div>
 
         {/* Status */}
@@ -349,9 +354,16 @@ const Dashboard: React.FC = () => {
         )}
 
         {result && (
-          <div className="mx-3 mb-2 flex items-center gap-2 rounded-lg bg-green-950/60 px-3 py-2 text-xs text-green-400">
-            <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
-            Complete
+          <div className="mx-3 mb-2 rounded-lg bg-green-950/60 px-3 py-2">
+            <div className="flex items-center gap-2 text-xs text-green-400">
+              <span className="h-1.5 w-1.5 rounded-full bg-green-400" />
+              Complete
+            </div>
+            {csvFileName && (
+              <p className="mt-1 truncate pl-3.5 text-[10px] text-gray-400" title={csvFileName}>
+                <span className="text-gray-500">File:</span> <span className="font-medium text-gray-300">{csvFileName}</span>
+              </p>
+            )}
           </div>
         )}
 
@@ -378,6 +390,28 @@ const Dashboard: React.FC = () => {
                 </option>
               ))}
             </select>
+
+            <label className="mb-3 flex cursor-pointer items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+              <div>
+                <span className="block text-[11px] font-medium text-gray-300">Show Labels</span>
+                <span className="text-[9px] text-gray-500">Zoom Aware</span>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={showLabels}
+                onClick={() => setShowLabels(!showLabels)}
+                className={`relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors duration-200 ${
+                  showLabels ? "bg-red-600" : "bg-gray-700"
+                }`}
+              >
+                <span
+                  className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
+                    showLabels ? "translate-x-[18px]" : "translate-x-[3px]"
+                  }`}
+                />
+              </button>
+            </label>
 
             <label className="mb-1 block text-[10px] text-gray-400">Min Transaction Amount (₹)</label>
             <input
@@ -552,6 +586,7 @@ const Dashboard: React.FC = () => {
                       onNodeClick={handleNodeClick}
                       zoomTo={zoomToNodes}
                       highlightRingNodes={highlightedRingMembers}
+                      showLabels={showLabels}
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-gray-600">Loading graph…</div>
@@ -601,7 +636,7 @@ const Dashboard: React.FC = () => {
               {/* Tab Header */}
               <div className="flex shrink-0 border-b border-gray-800">
                 <button
-                  onClick={() => { setSidebarTab("suspicious"); setHighlightedRingMembers(undefined); highlightedRingIdRef.current = null; }}
+                  onClick={() => { setSidebarTab("suspicious"); setHighlightedRingMembers(undefined); highlightedRingIdRef.current = null; setSelectedRing(null); }}
                   className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${sidebarTab === "suspicious"
                     ? "border-b-2 border-yellow-400 text-yellow-400"
                     : "text-gray-500 hover:text-gray-300"
@@ -613,7 +648,7 @@ const Dashboard: React.FC = () => {
                     }`}>{suspiciousSorted.length}</span>
                 </button>
                 <button
-                  onClick={() => { setSidebarTab("rings"); setSelectedAccount(null); }}
+                  onClick={() => { setSidebarTab("rings"); setSelectedAccount(null); setSelectedRing(null); }}
                   className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${sidebarTab === "rings"
                     ? "border-b-2 border-red-400 text-red-400"
                     : "text-gray-500 hover:text-gray-300"
@@ -627,7 +662,7 @@ const Dashboard: React.FC = () => {
               </div>
 
               {selectedAccount ? (
-                /* ── DETAIL VIEW (visible on any tab) ── */
+                /* ── SUSPICIOUS DETAIL VIEW ── */
                 <div className="flex flex-1 flex-col overflow-y-auto">
                   {/* Back button */}
                   <button
@@ -673,48 +708,67 @@ const Dashboard: React.FC = () => {
                     }
                   </div>
 
-                  {/* Fraud Ring Summary Table */}
+                  {/* Fraud Ring Summary */}
                   <div className="border-b border-gray-800 px-4 py-3">
-                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Fraud Ring Summary</p>
+                    <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Fraud Ring Summary</p>
                     {(() => {
                       const ids = selectedAccount.ring_ids?.length > 0
                         ? selectedAccount.ring_ids
                         : selectedAccount.ring_id ? [selectedAccount.ring_id] : [];
                       const memberRings = result!.fraud_rings.filter((r) => ids.includes(r.ring_id));
                       if (memberRings.length === 0)
-                        return <span className="text-[11px] text-gray-600">No ring membership</span>;
+                        return <span className="text-[11px] text-gray-600 italic">No ring membership</span>;
                       return (
-                        <div className="overflow-x-auto rounded-lg border border-gray-700">
-                          <table className="min-w-full text-[10px] text-gray-300">
-                            <thead className="border-b border-gray-700 bg-gray-900/80 text-[9px] uppercase tracking-wider text-gray-500">
-                              <tr>
-                                <th className="px-2 py-1.5 text-left">Ring ID</th>
-                                <th className="px-2 py-1.5 text-left">Pattern</th>
-                                <th className="px-2 py-1.5 text-center">Members</th>
-                                <th className="px-2 py-1.5 text-center">Risk</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-800">
-                              {memberRings.map((ring) => (
-                                <tr key={`${ring.ring_id}_${ring.pattern_type}`} className="hover:bg-gray-800/40">
-                                  <td className="whitespace-nowrap px-2 py-1.5 font-mono text-red-400">{ring.ring_id}</td>
-                                  <td className="whitespace-nowrap px-2 py-1.5 capitalize">{ring.pattern_type.replace(/_/g, " ")}</td>
-                                  <td className="px-2 py-1.5 text-center">{ring.member_accounts.length}</td>
-                                  <td className="px-2 py-1.5 text-center">
-                                    <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold ${ring.risk_score > 30 ? "bg-red-600 text-red-100" : ring.risk_score > 12 ? "bg-yellow-600 text-yellow-100" : "bg-green-700 text-green-100"
-                                      }`}>{ring.risk_score}</span>
-                                  </td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                          {/* Member accounts list per ring */}
+                        <div className="space-y-3">
                           {memberRings.map((ring) => (
-                            <div key={`accts_${ring.ring_id}`} className="border-t border-gray-700/60 px-2 py-1.5">
-                              <p className="text-[9px] font-semibold text-gray-500">{ring.ring_id} Accounts</p>
-                              <p className="mt-0.5 text-[10px] font-mono leading-relaxed text-gray-400">
-                                {ring.member_accounts.join(", ")}
-                              </p>
+                            <div
+                              key={`${ring.ring_id}_${ring.pattern_type}`}
+                              className="rounded-xl border border-gray-700/80 bg-gradient-to-br from-gray-900/90 to-gray-800/40 p-3 shadow-lg"
+                            >
+                              {/* Ring header row */}
+                              <div className="mb-2 flex items-center justify-between">
+                                <span className="rounded-md bg-red-900/50 border border-red-700/40 px-2 py-0.5 font-mono text-[11px] font-bold text-red-300">
+                                  {ring.ring_id}
+                                </span>
+                                <span className={`rounded-full px-2 py-0.5 text-[10px] font-bold shadow-sm ${
+                                  ring.risk_score > 30
+                                    ? "bg-red-600/90 text-white"
+                                    : ring.risk_score > 12
+                                    ? "bg-yellow-600/90 text-white"
+                                    : "bg-green-700/90 text-white"
+                                }`}>
+                                  Risk: {ring.risk_score}
+                                </span>
+                              </div>
+
+                              {/* Pattern & Members */}
+                              <div className="mb-2 flex items-center gap-2">
+                                <span className="rounded-md bg-purple-900/40 border border-purple-700/30 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-purple-300">
+                                  {ring.pattern_type.replace(/_/g, " ")}
+                                </span>
+                                <span className="text-[10px] text-gray-400">
+                                  {ring.member_accounts.length} member{ring.member_accounts.length !== 1 ? "s" : ""}
+                                </span>
+                              </div>
+
+                              {/* Member accounts */}
+                              <div className="rounded-lg bg-black/40 p-2">
+                                <p className="mb-1 text-[9px] font-semibold uppercase tracking-wider text-gray-500">Member Account ID's</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {ring.member_accounts.map((acc) => (
+                                    <span
+                                      key={acc}
+                                      className={`inline-block rounded-md px-1.5 py-0.5 font-mono text-[9px] font-medium ${
+                                        acc === selectedAccount.account_id
+                                          ? "bg-indigo-600/50 border border-indigo-500/40 text-indigo-200"
+                                          : "bg-gray-800/80 border border-gray-700/40 text-gray-400"
+                                      }`}
+                                    >
+                                      {acc}
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -745,15 +799,138 @@ const Dashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
+              ) : selectedRing ? (
+                /* ── RING DETAIL VIEW ── */
+                <div className="flex flex-1 flex-col overflow-y-auto">
+                  {/* Back button */}
+                  <button
+                    onClick={() => {
+                      setSelectedRing(null);
+                      highlightedRingIdRef.current = null;
+                      setHighlightedRingMembers(undefined);
+                      setZoomToNodes([]);
+                    }}
+                    className="flex shrink-0 items-center gap-1.5 border-b border-gray-800 px-3 py-2 text-[11px] text-gray-400 hover:bg-gray-800/60 hover:text-gray-200"
+                  >
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth={2.5} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                    </svg>
+                    Back to list
+                  </button>
+
+                  {/* Ring ID + Risk Score */}
+                  <div className="border-b border-gray-800 px-4 py-3">
+                    <div className="mb-1 flex items-center gap-2">
+                      <div className={`flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg ${
+                        selectedRing.risk_score > 30 ? "bg-red-600" : selectedRing.risk_score > 12 ? "bg-yellow-600" : "bg-green-700"
+                      }`}>
+                        <span className="text-sm font-bold leading-none text-white">{selectedRing.risk_score}</span>
+                        <span className="text-[8px] font-semibold text-white/80">RISK</span>
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-gray-100">{selectedRing.ring_id}</p>
+                        <p className="text-[10px] text-gray-500 capitalize">{selectedRing.pattern_type.replace(/_/g, " ")}</p>
+                      </div>
+                    </div>
+                    {/* Risk bar */}
+                    <div className="mt-2 h-1.5 w-full rounded-full bg-gray-800">
+                      <div
+                        className={`h-full rounded-full ${selectedRing.risk_score > 30 ? "bg-red-500" : selectedRing.risk_score > 12 ? "bg-yellow-500" : "bg-green-500"}`}
+                        style={{ width: `${Math.min(selectedRing.risk_score, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Pattern Info */}
+                  <div className="border-b border-gray-800 px-4 py-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Detection Pattern</p>
+                    <span className="rounded-full bg-purple-900/40 border border-purple-700/50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-purple-300">
+                      {selectedRing.pattern_type.replace(/_/g, " ")}
+                    </span>
+                  </div>
+
+                  {/* Member Accounts */}
+                  <div className="border-b border-gray-800 px-4 py-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">
+                      Member Accounts ({selectedRing.member_accounts.length})
+                    </p>
+                    <div className="space-y-1.5">
+                      {selectedRing.member_accounts.map((accId) => {
+                        const acct = result?.suspicious_accounts.find((s) => s.account_id === accId);
+                        return (
+                          <button
+                            key={accId}
+                            onClick={() => {
+                              if (acct) {
+                                setSelectedAccount(acct);
+                                setSelectedRing(null);
+                                setSidebarTab("suspicious");
+                                setZoomToNodes([accId]);
+                              }
+                            }}
+                            className="flex w-full items-center gap-2 rounded-lg bg-gray-900/60 px-3 py-2 text-left transition-colors hover:bg-gray-800/80"
+                          >
+                            {acct ? (
+                              <ScoreBadge score={acct.suspicion_score} />
+                            ) : (
+                              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-700">
+                                <span className="text-[9px] font-bold text-gray-400">N/A</span>
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-xs font-semibold text-gray-100 font-mono">{accId}</p>
+                              {acct && (
+                                <p className="text-[10px] text-gray-500 capitalize">{acct.account_type.replace(/_/g, " ")}</p>
+                              )}
+                            </div>
+                            {acct && <IconChevron />}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Aggregate Transaction Stats */}
+                  <div className="px-4 py-3">
+                    <p className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-500">Ring Transaction Summary</p>
+                    {(() => {
+                      const members = selectedRing.member_accounts
+                        .map((id) => result?.suspicious_accounts.find((s) => s.account_id === id))
+                        .filter(Boolean) as SuspiciousAccount[];
+                      const totalInflow = members.reduce((s, m) => s + m.total_inflow, 0);
+                      const totalOutflow = members.reduce((s, m) => s + m.total_outflow, 0);
+                      const totalTx = members.reduce((s, m) => s + m.transaction_count, 0);
+                      return (
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                            <span className="text-[11px] text-gray-400">Total Inflow</span>
+                            <span className="font-bold text-sm text-green-400">₹{totalInflow.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                            <span className="text-[11px] text-gray-400">Total Outflow</span>
+                            <span className="font-bold text-sm text-red-400">₹{totalOutflow.toLocaleString("en-IN")}</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                            <span className="text-[11px] text-gray-400">Total Tx Count</span>
+                            <span className="font-bold text-sm text-gray-100">{totalTx}</span>
+                          </div>
+                          <div className="flex items-center justify-between rounded-lg bg-gray-900/60 px-3 py-2">
+                            <span className="text-[11px] text-gray-400">Avg Risk Score</span>
+                            <span className="font-bold text-sm text-gray-100">
+                              {members.length > 0 ? Math.round(members.reduce((s, m) => s + m.suspicion_score, 0) / members.length) : "N/A"}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+                </div>
               ) : sidebarTab === "suspicious" ? (
                 /* ── SUSPICIOUS LIST VIEW ── */
                 <div className="flex-1 overflow-y-auto">
                   {suspiciousSorted.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-xs text-gray-600">No suspicious accounts</div>
-                  ) : suspiciousSorted.map((acct) => {
-                    const acctRingIds = acct.ring_ids?.length ? acct.ring_ids : acct.ring_id ? [acct.ring_id] : [];
-                    const acctRings = result ? result.fraud_rings.filter((r) => acctRingIds.includes(r.ring_id)) : [];
-                    return (
+                  ) : suspiciousSorted.map((acct) => (
                       <button
                         key={acct.account_id}
                         onClick={() => handleAccountListClick(acct)}
@@ -762,34 +939,24 @@ const Dashboard: React.FC = () => {
                         <ScoreBadge score={acct.suspicion_score} />
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-xs font-semibold text-gray-100">{acct.account_id}</p>
-                          {acctRings.length > 0 ? (
-                            <div className="mt-0.5 flex flex-wrap gap-1">
-                              {acctRings.slice(0, 3).map((ring) => (
-                                <span
-                                  key={`${ring.ring_id}_${ring.pattern_type}`}
-                                  className={`inline-block rounded-full px-1.5 py-[1px] text-[8px] font-bold leading-tight ${ring.risk_score > 30 ? "bg-red-900/60 text-red-300" : ring.risk_score > 12 ? "bg-yellow-900/60 text-yellow-300" : "bg-green-900/60 text-green-300"
-                                    }`}
-                                >
-                                  {ring.ring_id} · {ring.pattern_type}
-                                </span>
-                              ))}
-                              {acctRings.length > 3 && (
-                                <span className="text-[8px] text-gray-500">+{acctRings.length - 3} more</span>
-                              )}
-                            </div>
-                          ) : (
-                            <p className="truncate text-[10px] text-gray-500">
-                              {acct.detected_patterns[0]
-                                ? <span className="text-red-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
-                                : "—"
-                              }
-                            </p>
-                          )}
+                          <div className="mt-0.5 flex flex-wrap gap-1">
+                            {acct.detected_patterns.length > 0
+                              ? acct.detected_patterns.map((p, i) => (
+                                  <span
+                                    key={i}
+                                    className="inline-block rounded-full bg-red-900/50 border border-red-800/40 px-1.5 py-[1px] text-[8px] font-bold leading-tight text-red-300"
+                                  >
+                                    {p.replace(/_/g, " ")}
+                                  </span>
+                                ))
+                              : <span className="text-[10px] text-gray-500">—</span>
+                            }
+                          </div>
                         </div>
                         <IconChevron />
                       </button>
-                    );
-                  })}
+                    ))
+                  }
                 </div>
               ) : (
                 /* ── FRAUD RINGS TAB ── */
@@ -801,7 +968,7 @@ const Dashboard: React.FC = () => {
                     return (
                       <button
                         key={`${ring.ring_id}_${ring.pattern_type}`}
-                        onClick={() => handleSidebarRingHighlight(ring.ring_id)}
+                        onClick={() => { const wasSelected = highlightedRingIdRef.current === ring.ring_id; handleSidebarRingHighlight(ring.ring_id); setSelectedRing(wasSelected ? null : ring); }}
                         className={`flex w-full items-start gap-2.5 border-b border-gray-800/60 px-3 py-3 text-left transition-colors ${isActive ? "bg-red-950/40 border-l-2 border-l-red-500" : "hover:bg-gray-800/60"
                           }`}
                       >
