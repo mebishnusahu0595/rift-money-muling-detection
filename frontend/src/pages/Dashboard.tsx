@@ -65,6 +65,7 @@ const Dashboard: React.FC = () => {
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
   const lastClickedNodeRef = useRef<string | null>(null);
+  const lastClickedRingRef = useRef<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
 
   /* ── Filtered graph data based on sidebar filters ── */
@@ -112,9 +113,11 @@ const Dashboard: React.FC = () => {
       // Toggle zoom: same node → zoom out; different node → zoom in
       if (lastClickedNodeRef.current === nodeId) {
         lastClickedNodeRef.current = null;
+        lastClickedRingRef.current = null;
         setZoomToNodes([]); // empty = fit all
       } else {
         lastClickedNodeRef.current = nodeId;
+        lastClickedRingRef.current = null;
         setZoomToNodes([nodeId]);
       }
 
@@ -142,8 +145,18 @@ const Dashboard: React.FC = () => {
   const handleRingClick = useCallback(
     (ringId: string) => {
       if (!result) return;
+
+      // Toggle zoom: same ring → zoom out; different ring → zoom in
+      if (lastClickedRingRef.current === ringId) {
+        lastClickedRingRef.current = null;
+        lastClickedNodeRef.current = null;
+        setZoomToNodes([]); // empty = fit all
+        return;
+      }
+
       const ring = result.fraud_rings.find((r) => r.ring_id === ringId);
       if (ring && ring.member_accounts.length > 0) {
+        lastClickedRingRef.current = ringId;
         lastClickedNodeRef.current = null;
         setZoomToNodes([...ring.member_accounts]);
         const acct = result.suspicious_accounts.find((a) => a.account_id === ring.member_accounts[0]) ?? null;
@@ -343,14 +356,21 @@ const Dashboard: React.FC = () => {
               </div>
 
               {/* Ring table */}
-              <div className="shrink-0">
-                <div className="mb-2 flex items-center gap-2">
+              <div className="shrink-0 flex flex-col" style={{ maxHeight: "18rem" }}>
+                <div className="mb-2 flex items-center gap-2 shrink-0">
                   <svg className="h-3.5 w-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
                   </svg>
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Network Graph</span>
+                  {filteredRings.length > 0 && (
+                    <span className="rounded-full bg-gray-800 px-1.5 py-0.5 text-[9px] font-bold text-gray-400">
+                      {filteredRings.length}
+                    </span>
+                  )}
                 </div>
-                <RingTable rings={filteredRings} onRingClick={handleRingClick} />
+                <div className="min-h-0 flex-1 overflow-hidden">
+                  <RingTable rings={filteredRings} onRingClick={handleRingClick} />
+                </div>
               </div>
             </div>
 

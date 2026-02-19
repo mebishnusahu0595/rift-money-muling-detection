@@ -63,10 +63,11 @@ const RingTable: React.FC<Props> = ({ rings, onRingClick }) => {
   }
 
   return (
-    <div className="overflow-x-auto rounded-xl border border-gray-700 bg-gray-800/60">
-      <table className="min-w-full text-sm text-gray-200">
-        <thead className="border-b border-gray-700 bg-gray-900/60 text-xs uppercase tracking-wider text-gray-400">
-          <tr>
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-gray-700 bg-gray-800/60">
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <table className="min-w-full text-sm text-gray-200">
+          <thead className="sticky top-0 z-10 border-b border-gray-700 bg-gray-900 text-xs uppercase tracking-wider text-gray-400">
+            <tr>
             {(
               [
                 ["ring_id", "Ring ID"],
@@ -119,6 +120,7 @@ const RingTable: React.FC<Props> = ({ rings, onRingClick }) => {
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   );
 };
