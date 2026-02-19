@@ -22,10 +22,11 @@ COPY CMakeLists.txt .
 COPY include/ include/
 COPY src/ src/
 
-# Build
+# Build (disable march=native — Docker build CPU ≠ runtime CPU)
 RUN cmake -B build \
     -DCMAKE_BUILD_TYPE=Release \
     -DENABLE_REDIS=OFF \
+    -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG" \
     && cmake --build build --parallel $(nproc)
 
 # ── Stage 2: Runtime ─────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ FROM ubuntu:22.04 AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl3 \
     ca-certificates \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
@@ -53,7 +55,7 @@ ENV PORT=8000
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 CMD ["./money_muling_detector"]
