@@ -88,6 +88,12 @@ const GraphViz: React.FC<Props> = ({ data, onNodeClick }) => {
       });
     });
 
+    const nodeCount = data.nodes.length;
+    // Dynamically scale repulsion and edge length so graph breathes with more nodes
+    const repulsion = Math.max(10000, nodeCount * 2000);
+    const edgeLen = Math.max(120, nodeCount * 15);
+    const fontSize = nodeCount > 20 ? "8px" : nodeCount > 12 ? "9px" : "10px";
+
     const cy = cytoscape({
       container: containerRef.current,
       elements,
@@ -97,7 +103,7 @@ const GraphViz: React.FC<Props> = ({ data, onNodeClick }) => {
           style: {
             "background-color": "data(bgColor)" as any,
             label: "data(label)",
-            "font-size": "10px",
+            "font-size": fontSize as any,
             color: "#d1d5db",
             "text-outline-width": 1,
             "text-outline-color": "#111827",
@@ -115,18 +121,23 @@ const GraphViz: React.FC<Props> = ({ data, onNodeClick }) => {
             "target-arrow-color": "#4b5563",
             "target-arrow-shape": "triangle",
             "curve-style": "bezier",
-            opacity: 0.7,
+            opacity: 0.6,
           },
         },
       ],
       layout: {
         name: "cose",
         animate: false,
-        nodeRepulsion: () => 8000,
-        idealEdgeLength: () => 100,
-        padding: 20,
+        nodeRepulsion: () => repulsion,
+        idealEdgeLength: () => edgeLen,
+        nodeOverlap: 30,
+        gravity: 0.4,
+        numIter: 2500,
+        componentSpacing: 80,
+        coolingFactor: 0.95,
+        padding: 50,
       } as any,
-      minZoom: 0.2,
+      minZoom: 0.1,
       maxZoom: 5,
     });
 
