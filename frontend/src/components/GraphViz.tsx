@@ -17,6 +17,11 @@ const RING_COLORS = [
   "#ec4899", "#14b8a6", "#f97316", "#6366f1", "#84cc16",
 ];
 
+// Stable key derived from data so CytoscapeComponent fully remounts on new data
+function dataKey(d: GraphData) {
+  return `${d.nodes.length}-${d.edges.length}-${d.nodes.map((n) => n.id).join(",")}`;
+}
+
 // ── component ──────────────────────────────────────────────────────────────
 
 export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
@@ -29,11 +34,9 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   // always-current callback ref — never stale
   const onNodeClickRef = useRef(onNodeClick);
   useEffect(() => { onNodeClickRef.current = onNodeClick; });
-  // track layout runs
-  const layoutDataSig = useRef<string>("");
 
-  const elements = useMemo(() => {
-    // Person SVG icons encoded as data URIs
+  // Build element definitions (not passed as reactive prop — added manually in handleCyReady)
+  const elementDefs = useMemo(() => {
     const iconNormal = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='rgba(255,255,255,0.75)'%3E%3Cpath d='M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z'/%3E%3C/svg%3E";
     const iconSuspicious = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='rgba(255,255,255,0.9)' d='M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z'/%3E%3Cpolygon fill='%23fbbf24' points='20,2 22,6 18,6'/%3E%3C/svg%3E";
     const iconHighRisk = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='rgba(255,255,255,0.9)' d='M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z'/%3E%3Cpolygon fill='%23ef4444' points='20,1 23,7 17,7'/%3E%3Cline x1='20' y1='3' x2='20' y2='5.2' stroke='white' stroke-width='1.2' stroke-linecap='round'/%3E%3Ccircle cx='20' cy='6.3' r='0.5' fill='white'/%3E%3C/svg%3E";
@@ -52,22 +55,14 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
           : "transparent";
 
       return {
-        data: {
-          id: n.id,
-          label: n.id,
-          score,
-          color,
-          size,
-          icon,
-          ringColor,
-          inflow: n.total_inflow,
-          outflow: n.total_outflow,
-          isNormal: score === 0,
-        },
+        group: "nodes" as const,
+        data: { id: n.id, label: n.id, score, color, size, icon, ringColor,
+          inflow: n.total_inflow, outflow: n.total_outflow, isNormal: score === 0 },
       };
     });
 
     const edgeEls = data.edges.map((e, i) => ({
+      group: "edges" as const,
       data: {
         id: `e${i}`,
         source: e.source,
@@ -92,16 +87,16 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
           "background-clip": "none" as const,
           width: "data(size)" as unknown as number,
           height: "data(size)" as unknown as number,
-          "font-size": "7px",
+          "font-size": "8px",
           color: "#cbd5e1",
           "text-valign": "bottom" as const,
           "text-halign": "center" as const,
-          "text-margin-y": 3,
+          "text-margin-y": 4,
           "border-width": 2,
           "border-color": "data(ringColor)" as string,
           "text-outline-width": 1,
           "text-outline-color": "#0f0f23",
-          "overlay-opacity": 0,  // no tap flash
+          "overlay-opacity": 0,
         },
       },
       {
@@ -117,11 +112,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
       },
       {
         selector: "node:selected",
-        style: {
-          "border-width": 3,
-          "border-color": "#6366f1",
-          "overlay-opacity": 0,
-        },
+        style: { "border-width": 3, "border-color": "#6366f1", "overlay-opacity": 0 },
       },
       { selector: ".dimmed",      style: { opacity: 0.07 } },
       { selector: ".highlighted", style: { opacity: 1 } },
@@ -129,7 +120,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
     []
   );
 
-  // ── Sync focus mode ref so tap handler always sees current value ──────────
+  // ── Sync focus mode ref ────────────────────────────────────────────────
   useEffect(() => {
     focusModeRef.current = focusModeEnabled;
     if (!focusModeEnabled && cyRef.current) {
@@ -138,7 +129,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
     }
   }, [focusModeEnabled]);
 
-  // ── Reactive filter — hide/show without re-layout ──────────────────────
+  // ── Reactive filter — hide/show without re-layout ─────────────────────
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
@@ -162,77 +153,71 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
     (cy.edges().not(edgesToHide) as any).show();
   }, [showNormal, minScore]);
 
-  // ── zoomTo prop: when caller passes node IDs to zoom into ─────────────
+  // ── zoomTo prop ────────────────────────────────────────────────────────
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy || !zoomTo || zoomTo.length === 0) return;
-    const nodes = cy.collection(zoomTo.map((id) => `#${id}`).join(", "));
-    if (nodes.length > 0) {
-      cy.animate({ fit: { eles: nodes, padding: 80 }, duration: 500 } as never);
-    }
+    const sel = zoomTo.map((id) => `#${CSS.escape(id)}`).join(", ");
+    try {
+      const nodes = cy.$(sel);
+      if (nodes.length > 0) cy.animate({ fit: { eles: nodes, padding: 80 }, duration: 500 } as never);
+    } catch { /* ignore bad selectors */ }
   }, [zoomTo]);
 
-  // ── cy prop callback: set ref + run layout when data changes ─────────────
+  // ── cy callback: runs once per mount (key forces remount on new data) ──
   const handleCyReady = useCallback(
     (cy: Core) => {
-      const prevCy = cyRef.current;
+      if (cyRef.current === cy) return; // already initialised this instance
+      cyRef.current = cy;
 
-      // ── Register tap listeners once (or when cy instance changes) ──────
-      if (prevCy !== cy) {
-        cyRef.current = cy;
+      // Add all elements manually — this way cy.json() never resets positions
+      cy.add(elementDefs as never);
 
-        // Remove any stale listeners from previous instance (shouldn't happen,
-        // but belt-and-suspenders)
-        if (prevCy) {
-          prevCy.off("tap");
-        }
-
-        cy.on("tap", "node", (e: EventObject) => {
-          const id: string = e.target.id();
-          if (focusModeRef.current) {
-            if (focusedRef.current === id) {
-              cy.elements().removeClass("dimmed highlighted");
-              focusedRef.current = null;
-            } else {
-              focusedRef.current = id;
-              const hood = cy.getElementById(id).closedNeighborhood();
-              cy.elements().addClass("dimmed").removeClass("highlighted");
-              hood.removeClass("dimmed").addClass("highlighted");
-            }
-          }
-          // Use the always-current ref — never a stale closure
-          onNodeClickRef.current(id);
-        });
-
-        cy.on("tap", (e: EventObject) => {
-          if (e.target === cy) {
+      // Tap listener on node
+      cy.on("tap", "node", (e: EventObject) => {
+        const id: string = e.target.id();
+        if (focusModeRef.current) {
+          if (focusedRef.current === id) {
             cy.elements().removeClass("dimmed highlighted");
             focusedRef.current = null;
+          } else {
+            focusedRef.current = id;
+            const hood = cy.getElementById(id).closedNeighborhood();
+            cy.elements().addClass("dimmed").removeClass("highlighted");
+            hood.removeClass("dimmed").addClass("highlighted");
           }
-        });
-      }
+        }
+        onNodeClickRef.current(id);
+      });
 
-      // ── Run layout only when the data fingerprint changes ──────────────
-      const sig = `${data.nodes.length}-${data.edges.length}`;
-      if (layoutDataSig.current === sig) return;
-      layoutDataSig.current = sig;
+      // Tap on background — clear focus
+      cy.on("tap", (e: EventObject) => {
+        if (e.target === cy) {
+          cy.elements().removeClass("dimmed highlighted");
+          focusedRef.current = null;
+        }
+      });
 
-      const nodeCount = data.nodes.length;
+      // Run cose layout — nodes are already in cy, positions will spread correctly
+      const nodeCount = cy.nodes().length;
       cy.layout({
         name: "cose",
         animate: false,
-        nodeRepulsion: () => Math.max(45000, nodeCount * 8000),
-        idealEdgeLength: () => Math.max(180, nodeCount * 22),
-        nodeOverlap: 80,
-        gravity: 0.15,
-        numIter: 3000,
-        componentSpacing: 250,
-        padding: 80,
         randomize: true,
+        nodeRepulsion: () => Math.max(50000, nodeCount * 10000),
+        idealEdgeLength: () => Math.max(200, nodeCount * 25),
+        nodeOverlap: 100,
+        gravity: 0.1,
+        numIter: 3000,
+        componentSpacing: 300,
+        padding: 60,
       } as never).run();
+
+      // Fit after layout
+      cy.fit(undefined, 40);
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data.nodes.length, data.edges.length]
+    // elementDefs identity is stable per data (useMemo keyed on data)
+    [elementDefs]
   );
 
   return (
@@ -269,9 +254,10 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
         </div>
       </div>
 
-      {/* ── Canvas ── */}
+      {/* ── Canvas — key forces full remount when data changes ── */}
       <CytoscapeComponent
-        elements={elements}
+        key={dataKey(data)}
+        elements={[]}
         stylesheet={stylesheet as never}
         style={{ width: "100%", flex: 1, minHeight: 420, background: "rgba(15,15,35,0.6)" }}
         cy={(cy: Core) => handleCyReady(cy)}
@@ -283,7 +269,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
         <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-gray-500" /> Normal</span>
         <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-amber-400" /> Suspicious</span>
         <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> High Risk</span>
-        <span className="ml-auto italic text-gray-600">Zoom in for labels · Click node to focus</span>
+        <span className="ml-auto italic text-gray-600">Zoom in for labels · Click node to view details</span>
       </div>
     </div>
   );
