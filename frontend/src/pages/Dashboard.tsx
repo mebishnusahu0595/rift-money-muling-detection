@@ -292,7 +292,13 @@ const Dashboard: React.FC = () => {
                 </div>
                 <div className="min-h-0 flex-1">
                   {graphData ? (
-                    <GraphViz data={graphData} onNodeClick={handleNodeClick} zoomTo={zoomToNodes} />
+                    <GraphViz
+                      data={graphData}
+                      onNodeClick={handleNodeClick}
+                      zoomTo={zoomToNodes}
+                      patternFilter={patternFilter}
+                      minAmount={minAmount}
+                    />
                   ) : (
                     <div className="flex h-full items-center justify-center text-gray-600">Loading graph…</div>
                   )}
