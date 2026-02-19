@@ -766,12 +766,14 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
         const clusterNodeIds = new Set(clusters.flat());
         const clusterEls = cy.nodes().filter((n) => clusterNodeIds.has(n.id()));
         if (clusterEls.length > 0) {
-          cy.fit(clusterEls, 80);
-          // Cap initial zoom at 80% so large sparse graphs aren't over-zoomed
-          if (cy.zoom() > 0.8) cy.zoom(0.8);
+          // User Request: Load at 100% zoom centered on clusters, not "fitted" to tiny dots
+          // This ensures nodes are readable immediately, even if it requires panning
+          cy.center(clusterEls);
+          cy.zoom(1.0);
         } else {
-          // All nodes are isolated — fit everything
-          cy.fit(undefined, 40);
+          // All nodes are isolated
+          cy.center();
+          cy.zoom(1.0);
         }
         setLayoutRunning(false);
         setTimeout(drawMinimap, 400);
@@ -782,7 +784,9 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
         try {
           if (nodeCount > 3000) {
             // Very large graph: plain circle — component layout would be too slow
-            cy.layout({ name: "circle", animate: false, padding: 20, spacingFactor: 0.5 } as never).run();
+            cy.layout({ name: "circle", fit: false, animate: false, padding: 20, spacingFactor: 0.5 } as never).run();
+            cy.center();
+            cy.zoom(1.0);
             setLayoutRunning(false);
             setTimeout(drawMinimap, 400);
           } else {
@@ -790,7 +794,9 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
           }
         } catch {
           // Fallback to grid if anything explodes
-          cy.layout({ name: "grid", animate: false, padding: 30, avoidOverlap: true } as never).run();
+          cy.layout({ name: "grid", fit: false, animate: false, padding: 30, avoidOverlap: true } as never).run();
+          cy.center();
+          cy.zoom(1.0);
           setLayoutRunning(false);
         }
       }, 0);
