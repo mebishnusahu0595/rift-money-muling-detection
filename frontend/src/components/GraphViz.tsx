@@ -66,14 +66,27 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
   const [zoomPercent, setZoomPercent] = useState(100);
   const [labelLevel, setLabelLevel] = useState<LabelLevel>("all");
   const [layoutRunning, setLayoutRunning] = useState(false);
+  const [layoutElapsedMs, setLayoutElapsedMs] = useState(0);
   const [showMinimap, setShowMinimap] = useState(true);
   const minimapRef = useRef<HTMLCanvasElement | null>(null);
   const minimapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const drawMinimapRef = useRef<(() => void) | null>(null); // late-bound ref to drawMinimap
   const focusedRef = useRef<string | null>(null);
   const focusModeRef = useRef(false);
+  const isZoomedRef = useRef(false);          // always-current mirror of isZoomed state
+  const focusedNodeRef = useRef<string | null>(null); // which node is currently zoomed into
   // always-current callback ref — never stale
   const onNodeClickRef = useRef(onNodeClick);
   useEffect(() => { onNodeClickRef.current = onNodeClick; });
+  useEffect(() => { isZoomedRef.current = isZoomed; }, [isZoomed]);
+
+  // Live counter while layout is computing
+  useEffect(() => {
+    if (!layoutRunning) { setLayoutElapsedMs(0); return; }
+    const start = Date.now();
+    const t = setInterval(() => setLayoutElapsedMs(Date.now() - start), 50);
+    return () => clearInterval(t);
+  }, [layoutRunning]);
 
   // Build element definitions (not passed as reactive prop — added manually in handleCyReady)
   const elementDefs = useMemo(() => {
@@ -249,6 +262,64 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
     (cy.edges().not(edgesToHide) as any).show();
   }, [showNormal, showLowRisk, showSuspicious, showHighRisk, minScore]);
 
+  // ── Sync external filtered data → Cytoscape show/hide ─────────────────
+  // When the parent passes a new filtered `data` (patternFilter / minAmount
+  // changed), we show only the nodes/edges present in the new data, and
+  // hide the rest — WITHOUT remounting or re-running layout.
+  const filteredNodeIds = useMemo(
+    () => new Set(data.nodes.map((n) => n.id)),
+    [data.nodes]
+  );
+  const filteredEdgeKeys = useMemo(
+    () => new Set(data.edges.map((e) => `${e.source}__${e.target}`)),
+    [data.edges]
+  );
+
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+    // Use rAF so the show/hide runs after React paints — feels instantaneous
+    const raf = requestAnimationFrame(() => {
+      if (!cyRef.current) return;
+      cy.startBatch();
+      cy.nodes().forEach((n) => {
+        if (filteredNodeIds.has(n.id())) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (n as any).show();
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (n as any).hide();
+        }
+      });
+      cy.edges().forEach((e) => {
+        const key = `${e.source().id()}__${e.target().id()}`;
+        const bothVisible =
+          filteredNodeIds.has(e.source().id()) &&
+          filteredNodeIds.has(e.target().id());
+        if (bothVisible && filteredEdgeKeys.has(key)) {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (e as any).show();
+        } else {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (e as any).hide();
+        }
+      });
+      cy.endBatch();
+      // Trigger minimap redraw immediately via another rAF (after Cytoscape redraws)
+      requestAnimationFrame(() => {
+        const cv = minimapRef.current;
+        const cyInst = cyRef.current;
+        if (!cv || !cyInst) return;
+        const ctx = cv.getContext("2d");
+        if (ctx) ctx.clearRect(0, 0, cv.width, cv.height);
+        // drawMinimap defined later — call via ref to avoid forward-reference error
+        if (minimapTimerRef.current) clearTimeout(minimapTimerRef.current);
+        minimapTimerRef.current = setTimeout(() => drawMinimapRef.current?.(), 50);
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [filteredNodeIds, filteredEdgeKeys]);
+
   // ── Animated edge flow (disabled for large graphs — major perf win) ──
   useEffect(() => {
     const nodeCount = data.nodes.length;
@@ -268,9 +339,15 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
   useEffect(() => {
     const cy = cyRef.current;
     if (!cy) return;
-    // empty array = zoom out / fit all
+    // empty array = "zoom out" — go to 100% centered on last node (not fit-all)
     if (zoomTo && zoomTo.length === 0) {
-      cy.animate({ fit: { eles: cy.elements(":visible"), padding: 40 }, duration: 400 } as never);
+      cy.animate({
+        zoom: 1.0,
+        center: focusedNodeRef.current
+          ? { eles: cy.getElementById(focusedNodeRef.current) }
+          : { eles: cy.elements(":visible") },
+        duration: 400,
+      } as never);
       setIsZoomed(false);
       return;
     }
@@ -279,7 +356,15 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
     try {
       const nodes = cy.$(sel);
       if (nodes.length > 0) {
-        cy.animate({ fit: { eles: nodes, padding: 100 }, duration: 500 } as never);
+        if (nodes.length === 1) {
+          // Single node — zoom to 200% centred on it (same as tap handler)
+          focusedNodeRef.current = nodes[0].id();
+          cy.animate({ zoom: 2.0, center: { eles: nodes }, duration: 450 } as never);
+        } else {
+          // Multi-node (ring zoom) — fit to show all members
+          cy.animate({ fit: { eles: nodes, padding: 80 }, duration: 500 } as never);
+          focusedNodeRef.current = nodes[0].id(); // center zoom-out on first member
+        }
         setIsZoomed(true);
       }
     } catch { /* ignore bad selectors */ }
@@ -401,6 +486,8 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
       Math.min(vw, W), Math.min(vh, H)
     );
   }, []);
+  // Keep ref in sync so useEffects declared before can call it without forward-ref errors
+  drawMinimapRef.current = drawMinimap;
 
   // ── Dynamic label updater ─────────────────────────────────────────────
   const updateLabels = useCallback((cy: Core, zoom: number) => {
@@ -446,11 +533,14 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
       // Add all elements manually — this way cy.json() never resets positions
       cy.add(elementDefs as never);
 
-      // Tap listener on node
+      // Tap listener — selection/focus only; zoom is handled by the zoomTo prop.
+      // onNodeClickRef → Dashboard.handleNodeClick → setZoomToNodes → zoomTo useEffect → cy.animate
+      // NEVER call cy.animate here — would create a second competing animation (flicker/bounce).
       cy.on("tap", "node", (e: EventObject) => {
         const id: string = e.target.id();
         const score: number = e.target.data("score") ?? 0;
         setTappedNode({ id, score });
+
         if (focusModeRef.current) {
           if (focusedRef.current === id) {
             cy.elements().removeClass("dimmed highlighted");
@@ -462,6 +552,8 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
             hood.removeClass("dimmed").addClass("highlighted");
           }
         }
+
+        // Single source of zoom: delegate to Dashboard via onNodeClick
         onNodeClickRef.current(id);
       });
 
@@ -483,53 +575,226 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
 
       // Use setTimeout(0) to let React paint the loading overlay BEFORE
       // the synchronous layout blocks the main thread.
-      setTimeout(() => {
-        try {
-          if (nodeCount > 1500) {
-            // Large graph: circle layout (O(N), instant, never freezes)
-            cy.layout({
-              name: "circle",
-              animate: false,
-              padding: 20,
-              spacingFactor: 0.6,
-            } as never).run();
-          } else if (nodeCount > 300) {
-            // Medium graph: grid layout (fast, no physics)
-            cy.layout({
-              name: "grid",
-              animate: false,
-              padding: 30,
-              avoidOverlap: true,
-            } as never).run();
-          } else {
-            // Small graph: cose with controlled iterations
-            const repulsion = nodeCount <= 50
-              ? Math.max(8000, nodeCount * 800)
-              : Math.max(8000, sqrtN * 1800 + density * 400);
-            const edgeLen = nodeCount <= 50
-              ? Math.max(80, nodeCount * 4)
-              : Math.max(60, sqrtN * 6);
-            const gravity = nodeCount <= 100 ? 0.12 : Math.min(0.6, 0.1 + sqrtN * 0.012);
-            // Hard cap: max 1500 iterations for any graph
-            const iterations = Math.min(1500, Math.max(800, nodeCount * 4));
-            cy.layout({
-              name: "cose",
-              animate: false,
-              randomize: true,
-              nodeRepulsion: () => repulsion,
-              idealEdgeLength: () => edgeLen,
-              nodeOverlap: 30,
-              gravity,
-              numIter: iterations,
-              componentSpacing: Math.max(60, Math.min(200, sqrtN * 8)),
-              padding: 40,
-              nestingFactor: 1.2,
-            } as never).run();
+      // ── Component-aware layout ─────────────────────────────────────────
+      // Strategy:
+      //  1. BFS to find connected components (O(N+E))
+      //  2. Sort components: largest first
+      //  3. Each component gets its own region, laid out by size:
+      //     - isolated nodes (single node, no edges) → grid strip at bottom
+      //     - small (≤30 nodes)  → cose (physics, best looking)
+      //     - medium (≤200)      → concentric
+      //     - large (>200)       → circle
+      //  4. Components packed left→right, row-wrapping at max canvas width
+
+      const runComponentLayout = async () => {
+        // ── Step 1: Build adjacency list in pure JS (no Cytoscape DOM calls) ──
+        // This is the critical optimisation: cy.getElementById() inside BFS was
+        // calling into the Cytoscape collection API for every node, making BFS
+        // O(N²) in practice. With a JS Map it's truly O(N+E).
+        const adj = new Map<string, Set<string>>();
+        const degreeMap = new Map<string, number>();
+
+        // Initialise every node
+        data.nodes.forEach((n) => {
+          adj.set(n.id, new Set());
+          degreeMap.set(n.id, 0);
+        });
+
+        // Fill from edge list
+        data.edges.forEach((e) => {
+          adj.get(e.source)?.add(e.target);
+          adj.get(e.target)?.add(e.source);
+          degreeMap.set(e.source, (degreeMap.get(e.source) ?? 0) + 1);
+          degreeMap.set(e.target, (degreeMap.get(e.target) ?? 0) + 1);
+        });
+
+        // ── Step 2: BFS component finder ── O(N+E), pure JS
+        const visited = new Set<string>();
+        const components: string[][] = [];
+        data.nodes.forEach((n) => {
+          const nid = n.id;
+          if (visited.has(nid)) return;
+          const component: string[] = [];
+          const queue = [nid];
+          visited.add(nid);
+          while (queue.length) {
+            const cur = queue.shift()!;
+            component.push(cur);
+            adj.get(cur)?.forEach((neighbor) => {
+              if (!visited.has(neighbor)) {
+                visited.add(neighbor);
+                queue.push(neighbor);
+              }
+            });
           }
-        } finally {
+          components.push(component);
+        });
+
+        // Sort: largest component first
+        components.sort((a, b) => b.length - a.length);
+
+        // Separate isolated nodes (degree 0)
+        const isolated: string[] = [];
+        const clusters: string[][] = [];
+        for (const comp of components) {
+          if (comp.length === 1 && (degreeMap.get(comp[0]) ?? 0) === 0) {
+            isolated.push(comp[0]);
+          } else {
+            clusters.push(comp);
+          }
+        }
+
+        // Canvas packing config
+        const CANVAS_W = Math.max(3000, Math.sqrt(nodeCount) * 180);
+        const COMP_PADDING = 80;  // gap between components
+
+        let curX = 0;
+        let curY = 0;
+        let rowMaxH = 0;
+
+        const layoutPromises: Array<Promise<void>> = [];
+
+        for (const comp of clusters) {
+          const n = comp.length;
+          // radius scales with sqrt(n) — gives good spacing
+          const radius = Math.max(100, Math.sqrt(n) * 28);
+          const compW = radius * 2 + COMP_PADDING;
+          const compH = radius * 2 + COMP_PADDING;
+
+          // Wrap row
+          if (curX + compW > CANVAS_W && curX > 0) {
+            curX = 0;
+            curY += rowMaxH + COMP_PADDING * 1.5;
+            rowMaxH = 0;
+          }
+
+          const cx = curX + radius;
+          const cy2 = curY + radius;
+
+          // Select this component's node elements — layout finds their edges internally
+          const sel = comp.map((id) => `#${CSS.escape(id)}`).join(", ");
+          const compEls = cy.$(sel);
+          const subgraph = compEls;
+
+
+          const p = new Promise<void>((resolve) => {
+            let layoutName: string;
+            let layoutOpts: Record<string, unknown>;
+
+            // Hub detection uses pre-computed degreeMap (no Cytoscape calls)
+            const maxDegree = Math.max(...comp.map((id) => degreeMap.get(id) ?? 0));
+            const isHubStar = maxDegree > Math.max(5, n * 0.25);
+
+            const bb = { x1: cx - radius, y1: cy2 - radius, x2: cx + radius, y2: cy2 + radius };
+
+            if (n === 2) {
+              // Two nodes — side by side
+              layoutName = "grid";
+              layoutOpts = { animate: false, rows: 1, boundingBox: bb };
+            } else if (n <= 15 && !isHubStar) {
+              // Small true peer cluster — cose for organic look (O(N²·iter), ok up to ~15)
+              layoutName = "cose";
+              layoutOpts = {
+                animate: false, randomize: true,
+                nodeRepulsion: () => Math.max(6000, n * 700),
+                idealEdgeLength: () => Math.max(50, n * 4),
+                nodeOverlap: 20, gravity: 0.3,
+                numIter: Math.min(400, n * 20),
+                padding: 10, boundingBox: bb,
+              };
+            } else if (n <= 60 && !isHubStar) {
+              // Medium peer cluster — breadthfirst circle (clean, O(N+E))
+              layoutName = "breadthfirst";
+              layoutOpts = {
+                animate: false, directed: false,
+                circle: true, grid: false,
+                spacingFactor: Math.max(0.55, 1.1 - n * 0.005),
+                padding: 10, boundingBox: bb,
+              };
+            } else if (n <= 150 && !isHubStar) {
+              // Large peer cluster — breadthfirst tree (O(N+E))
+              layoutName = "breadthfirst";
+              layoutOpts = {
+                animate: false, directed: false,
+                circle: false, grid: false,
+                spacingFactor: Math.max(0.5, 1.0 - n * 0.003),
+                padding: 10, boundingBox: bb,
+              };
+            } else {
+              // Hub-star or very large — circle (O(N), instant)
+              layoutName = "circle";
+              layoutOpts = {
+                animate: false, padding: 10,
+                spacingFactor: Math.max(0.45, 0.95 - n * 0.001),
+                boundingBox: bb,
+              };
+            }
+
+
+            subgraph.layout({ name: layoutName, ...layoutOpts } as never).run();
+            resolve();
+          });
+
+          layoutPromises.push(p);
+
+          curX += compW + COMP_PADDING;
+          rowMaxH = Math.max(rowMaxH, compH);
+        }
+
+        // Place isolated nodes in a neat compact grid — centred under clusters
+        await Promise.all(layoutPromises);
+
+        if (isolated.length > 0) {
+          const GRID_CELL = 28;
+          const gridCols = Math.ceil(Math.sqrt(isolated.length * 4)); // wide, short grid
+          const totalGridW = gridCols * GRID_CELL;
+          const gridStartX = Math.max(0, (CANVAS_W / 2) - totalGridW / 2); // centred
+          const gridStartY = curY + rowMaxH + COMP_PADDING * 2;
+
+          isolated.forEach((id, i) => {
+            const col = i % gridCols;
+            const row = Math.floor(i / gridCols);
+            cy.getElementById(id).position({
+              x: gridStartX + col * GRID_CELL,
+              y: gridStartY + row * GRID_CELL,
+            });
+          });
+        }
+
+        // After layout: fit to cluster nodes only (not the isolated grid)
+        // This keeps fraud rings visible at a readable zoom instead of 3%
+        const clusterNodeIds = new Set(clusters.flat());
+        const clusterEls = cy.nodes().filter((n) => clusterNodeIds.has(n.id()));
+        if (clusterEls.length > 0) {
+          cy.fit(clusterEls, 80);
+          // Cap initial zoom at 80% so large sparse graphs aren't over-zoomed
+          if (cy.zoom() > 0.8) cy.zoom(0.8);
+        } else {
+          // All nodes are isolated — fit everything
+          cy.fit(undefined, 40);
+        }
+        setLayoutRunning(false);
+        setTimeout(drawMinimap, 400);
+      };
+
+      // Need async IIFE because we use await inside setTimeout
+      setTimeout(async () => {
+        try {
+          if (nodeCount > 3000) {
+            // Very large graph: plain circle — component layout would be too slow
+            cy.layout({ name: "circle", animate: false, padding: 20, spacingFactor: 0.5 } as never).run();
+            setLayoutRunning(false);
+            setTimeout(drawMinimap, 400);
+          } else {
+            await runComponentLayout();
+          }
+        } catch {
+          // Fallback to grid if anything explodes
+          cy.layout({ name: "grid", animate: false, padding: 30, avoidOverlap: true } as never).run();
           setLayoutRunning(false);
         }
       }, 0);
+
 
       // Constrain zoom & fit
       cy.maxZoom(10.0);   // 1000%
@@ -544,13 +809,15 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
 
       // Debounced zoom tracking — adaptive timers based on graph size
       const zoomDebounce = nodeCount > 1000 ? 120 : nodeCount > 300 ? 80 : 30;
-      const minimapDebounce = nodeCount > 1000 ? 400 : nodeCount > 300 ? 200 : 80;
+      const minimapDebounce = nodeCount > 1000 ? 300 : nodeCount > 300 ? 150 : 60;
       let zoomTimer: ReturnType<typeof setTimeout> | null = null;
       cy.on("zoom", () => {
         if (zoomTimer) clearTimeout(zoomTimer);
         zoomTimer = setTimeout(() => {
           const z = cy.zoom();
           setZoomPercent(Math.round(z * 100));
+          // Auto-dismiss node tooltip when zooming out below 0.3
+          if (z < 0.3) setTappedNode(null);
           if (nodeCount <= 5000) updateLabels(cy, z);  // skip for very large graphs
           // Schedule minimap redraw
           if (minimapTimerRef.current) clearTimeout(minimapTimerRef.current);
@@ -558,11 +825,14 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
         }, zoomDebounce);
       });
 
-      // Also redraw minimap on pan
-      cy.on("pan", () => {
+      // Also redraw minimap on pan AND drag
+      const scheduleMinimapRedraw = () => {
         if (minimapTimerRef.current) clearTimeout(minimapTimerRef.current);
         minimapTimerRef.current = setTimeout(drawMinimap, minimapDebounce);
-      });
+      };
+      cy.on("pan", scheduleMinimapRedraw);
+      cy.on("dragfree", scheduleMinimapRedraw);
+      cy.on("drag", scheduleMinimapRedraw);
 
       // Initial minimap draw after layout settles
       setTimeout(drawMinimap, 500);
@@ -670,35 +940,23 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
 
       {/* ── Canvas — key forces full remount when data changes ── */}
       <div className="relative min-h-0 flex-1">
-        {/* Selected node banner */}
-        {tappedNode && (
-          <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2">
-            <div className="flex items-center gap-2.5 rounded-xl border border-gray-700/80 bg-gray-900/90 px-4 py-2 shadow-xl backdrop-blur-md">
-              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white ${tappedNode.score > 70 ? "bg-red-600" : tappedNode.score > 20 ? "bg-yellow-600" : "bg-green-700"
-                }`}>
-                {tappedNode.score}
-              </div>
-              <div>
-                <p className="text-sm font-bold tracking-wide text-white">{tappedNode.id}</p>
-                <p className={`text-[10px] font-semibold ${tappedNode.score > 70 ? "text-red-400" : tappedNode.score > 20 ? "text-yellow-400" : "text-green-400"
-                  }`}>
-                  {tappedNode.score > 70 ? "High Risk" : tappedNode.score > 20 ? "Suspicious" : "Normal"}
-                </p>
-              </div>
-            </div>
-          </div>
-        )}
-        {isZoomed && !tappedNode && (
-          <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[10px] font-medium text-blue-300 backdrop-blur">
-            Click same node again to zoom out
-          </div>
-        )}
 
-        {/* Label level indicator */}
-        <div className="pointer-events-none absolute left-3 top-3 z-10">
-          <div className="rounded bg-black/50 px-2 py-0.5 text-[9px] font-medium text-gray-400 backdrop-blur-sm">
-            Labels: {labelLevel === "none" ? "hidden" : labelLevel === "high-risk" ? "high risk only" : labelLevel === "suspicious" ? "suspicious+" : "all visible"}
+        {/* Label level + selected node info — compact bottom-left strip */}
+        <div className="pointer-events-none absolute bottom-10 left-3 z-10 flex flex-col gap-1">
+          <div className="rounded bg-black/60 px-2 py-0.5 text-[9px] font-medium text-gray-500 backdrop-blur-sm">
+            Labels: {labelLevel === "none" ? "hidden" : labelLevel === "high-risk" ? "high risk only" : labelLevel === "suspicious" ? "suspicious+" : "all"}
+            {isZoomed && <span className="ml-2 text-blue-400">· click node again to zoom out</span>}
           </div>
+          {tappedNode && (
+            <div className="flex items-center gap-1.5 rounded bg-black/70 px-2 py-1 text-[10px] backdrop-blur-sm">
+              <span className={`h-2 w-2 rounded-full shrink-0 ${tappedNode.score > 70 ? "bg-red-500" : tappedNode.score > 20 ? "bg-yellow-500" : "bg-green-500"}`} />
+              <span className="font-mono font-semibold text-white">{tappedNode.id}</span>
+              <span className={`ml-0.5 ${tappedNode.score > 70 ? "text-red-400" : tappedNode.score > 20 ? "text-yellow-400" : "text-green-400"}`}>
+                {tappedNode.score > 70 ? "High Risk" : tappedNode.score > 20 ? "Suspicious" : "Normal"}
+              </span>
+              <span className="ml-auto text-gray-500">score {tappedNode.score}</span>
+            </div>
+          )}
         </div>
 
         {/* Layout-running overlay — prevents interaction while cose runs */}
@@ -710,6 +968,7 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
             </div>
             <p className="text-sm font-semibold text-white">Computing layout…</p>
             <p className="text-[11px] text-gray-400 mt-1">{data.nodes.length.toLocaleString()} nodes · {data.edges.length.toLocaleString()} edges</p>
+            <p className="text-[11px] text-red-400 mt-0.5 tabular-nums">{(layoutElapsedMs / 1000).toFixed(2)}s</p>
           </div>
         )}
 
@@ -724,13 +983,84 @@ export default function GraphViz({ data, onNodeClick, graphKey, zoomTo, highligh
 
         {/* ── Minimap ── */}
         {showMinimap && (
-          <div className="absolute bottom-3 right-3 z-20 overflow-hidden rounded-lg border border-gray-700/60 shadow-xl">
+          <div className="absolute bottom-3 right-3 z-20 overflow-hidden rounded-lg border border-gray-600/70 shadow-2xl"
+            style={{ boxShadow: "0 0 0 1px rgba(99,102,241,0.3), 0 8px 32px rgba(0,0,0,0.6)" }}
+          >
             <canvas
               ref={minimapRef}
-              width={180}
-              height={130}
+              width={220}
+              height={160}
               className="block"
-              style={{ background: "rgba(13,17,23,0.9)" }}
+              style={{ background: "rgba(13,17,23,0.92)", cursor: "crosshair" }}
+              onClick={(e) => {
+                const cy = cyRef.current;
+                const canvas = minimapRef.current;
+                if (!cy || !canvas) return;
+                const rect = canvas.getBoundingClientRect();
+                const clickX = e.clientX - rect.left;
+                const clickY = e.clientY - rect.top;
+                const W = rect.width;
+                const H = rect.height;
+                const pad = 10;
+                const visibleEls = cy.elements(":visible");
+                const bb = visibleEls.boundingBox();
+                if (!bb || bb.w === 0 || bb.h === 0) return;
+                const scaleX = (W - pad * 2) / bb.w;
+                const scaleY = (H - pad * 2) / bb.h;
+                const scale = Math.min(scaleX, scaleY);
+                const offX = pad + ((W - pad * 2) - bb.w * scale) / 2;
+                const offY = pad + ((H - pad * 2) - bb.h * scale) / 2;
+                const worldX = bb.x1 + (clickX - offX) / scale;
+                const worldY = bb.y1 + (clickY - offY) / scale;
+
+                // Zoom in to at least 150% (stay at current if already deeper)
+                const targetZoom = Math.max(cy.zoom(), 1.5);
+
+                // Find nearest visible node within 200 world-units of the click point
+                let nearestNode: ReturnType<typeof cy.nodes>[0] | null = null;
+                let nearestDist = 200; // threshold in world units
+                cy.nodes(":visible").forEach((n) => {
+                  const pos = n.position();
+                  const dx = pos.x - worldX;
+                  const dy = pos.y - worldY;
+                  const dist = Math.sqrt(dx * dx + dy * dy);
+                  if (dist < nearestDist) {
+                    nearestDist = dist;
+                    nearestNode = n;
+                  }
+                });
+
+                if (nearestNode) {
+                  // Center on nearest node + zoom in + select it
+                  const nPos = (nearestNode as ReturnType<typeof cy.nodes>[0]).position();
+                  cy.animate({
+                    zoom: targetZoom,
+                    pan: {
+                      x: cy.width() / 2 - nPos.x * targetZoom,
+                      y: cy.height() / 2 - nPos.y * targetZoom,
+                    },
+                    duration: 300,
+                    easing: "ease-out",
+                  } as never);
+                  const nId: string = (nearestNode as ReturnType<typeof cy.nodes>[0]).id();
+                  const nScore: number = (nearestNode as ReturnType<typeof cy.nodes>[0]).data("score") ?? 0;
+                  setTappedNode({ id: nId, score: nScore });
+                  focusedNodeRef.current = nId;
+                  setIsZoomed(true);
+                  onNodeClickRef.current(nId);
+                } else {
+                  // No nearby node — just pan + zoom to the clicked area
+                  cy.animate({
+                    zoom: targetZoom,
+                    pan: {
+                      x: cy.width() / 2 - worldX * targetZoom,
+                      y: cy.height() / 2 - worldY * targetZoom,
+                    },
+                    duration: 250,
+                    easing: "ease-out",
+                  } as never);
+                }
+              }}
             />
           </div>
         )}

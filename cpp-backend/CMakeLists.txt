@@ -80,7 +80,7 @@ FetchContent_MakeAvailable(Crow)
 # ── Find system threading ─────────────────────────────────────────────────
 find_package(Threads REQUIRED)
 
-# ── Optional: Redis via hiredis ───────────────────────────────────────────
+# ── Optional: Redis via hiredis ────────────────────────────────────────────
 option(ENABLE_REDIS "Enable Redis persistence via hiredis" OFF)
 if(ENABLE_REDIS)
     find_library(HIREDIS_LIB hiredis)

@@ -81,16 +81,14 @@ export function useAnalysis() {
               } catch {
                 /* graph data optional */
               }
-              // First: stop the loader (light update — lets rAF tick the final time)
-              setState((s) => ({ ...s, polling: false }));
-              // Then: defer the heavy data update so the timer renders before big re-render
-              setTimeout(() => {
-                setState((s) => ({
-                  ...s,
-                  result: status.result!,
-                  graphData: gd,
-                }));
-              }, 50);
+              // Set everything atomically — no intermediate empty render
+              setState((s) => ({
+                ...s,
+                polling: false,
+                result: status.result!,
+                graphData: gd,
+              }));
+
             } else if (status.status === "error") {
               stopPolling();
               setState((s) => ({

@@ -64,12 +64,14 @@ const Dashboard: React.FC = () => {
 
   const [selectedAccount, setSelectedAccount] = useState<SuspiciousAccount | null>(null);
   const [zoomToNodes, setZoomToNodes] = useState<string[] | undefined>(undefined);
+  const [minAmountInput, setMinAmountInput] = useState(0); // raw input — debounced into minAmount
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
   const [maxNodes, setMaxNodes] = useState(0);
   const [maxNodesEnabled, setMaxNodesEnabled] = useState(false);
   const [sliderMaxNodes, setSliderMaxNodes] = useState(2000);
   const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const amountDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickedNodeRef = useRef<string | null>(null);
   const lastClickedRingRef = useRef<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
@@ -371,7 +373,9 @@ const Dashboard: React.FC = () => {
             >
               <option value="all">All Patterns</option>
               {patternTypes.map((p) => (
-                <option key={p} value={p}>{p}</option>
+                <option key={p} value={p}>
+                  {p.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())}
+                </option>
               ))}
             </select>
 
@@ -379,8 +383,14 @@ const Dashboard: React.FC = () => {
             <input
               type="number"
               min={0}
-              value={minAmount}
-              onChange={(e) => setMinAmount(Number(e.target.value))}
+              value={minAmountInput}
+              onChange={(e) => {
+                const v = Number(e.target.value);
+                setMinAmountInput(v);
+                // Debounce the actual filter — don't recompute on every keystroke
+                if (amountDebounceRef.current) clearTimeout(amountDebounceRef.current);
+                amountDebounceRef.current = setTimeout(() => setMinAmount(v), 200);
+              }}
               className="w-full rounded border border-gray-700 bg-gray-900 px-2 py-1.5 text-xs text-gray-200 focus:outline-none"
               placeholder="0"
             />
@@ -429,7 +439,9 @@ const Dashboard: React.FC = () => {
                       className="w-full accent-red-500"
                     />
                     <div className="flex items-center justify-between text-[10px] text-gray-500">
-                      <span className="text-red-300 font-semibold">{sliderMaxNodes.toLocaleString()} shown</span>
+                      <span className="text-red-300 font-semibold">
+                        {(filteredGraphData?.nodes.length ?? sliderMaxNodes).toLocaleString()} shown
+                      </span>
                       <span>of {graphData.nodes.length.toLocaleString()} total</span>
                     </div>
                     <p className="mt-1 text-[9px] text-gray-600 leading-tight">
