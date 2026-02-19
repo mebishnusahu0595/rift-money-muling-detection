@@ -30,6 +30,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   const [minScore, setMinScore] = useState(0);
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
+  const [tappedNode, setTappedNode] = useState<{ id: string; score: number } | null>(null);
   const focusedRef = useRef<string | null>(null);
   const focusModeRef = useRef(false);
   // always-current callback ref — never stale
@@ -209,6 +210,8 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
       // Tap listener on node
       cy.on("tap", "node", (e: EventObject) => {
         const id: string = e.target.id();
+        const score: number = e.target.data("score") ?? 0;
+        setTappedNode({ id, score });
         if (focusModeRef.current) {
           if (focusedRef.current === id) {
             cy.elements().removeClass("dimmed highlighted");
@@ -228,6 +231,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
         if (e.target === cy) {
           cy.elements().removeClass("dimmed highlighted");
           focusedRef.current = null;
+          setTappedNode(null);
         }
       });
 
@@ -291,7 +295,27 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
 
       {/* ── Canvas — key forces full remount when data changes ── */}
       <div className="relative min-h-0 flex-1">
-        {isZoomed && (
+        {/* Selected node banner */}
+        {tappedNode && (
+          <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2">
+            <div className="flex items-center gap-2.5 rounded-xl border border-gray-700/80 bg-gray-900/90 px-4 py-2 shadow-xl backdrop-blur-md">
+              <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white ${
+                tappedNode.score > 70 ? "bg-red-600" : tappedNode.score > 40 ? "bg-yellow-600" : "bg-green-700"
+              }`}>
+                {tappedNode.score}
+              </div>
+              <div>
+                <p className="text-sm font-bold tracking-wide text-white">{tappedNode.id}</p>
+                <p className={`text-[10px] font-semibold ${
+                  tappedNode.score > 70 ? "text-red-400" : tappedNode.score > 40 ? "text-yellow-400" : "text-green-400"
+                }`}>
+                  {tappedNode.score > 70 ? "High Risk" : tappedNode.score > 40 ? "Suspicious" : "Normal"}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        {isZoomed && !tappedNode && (
           <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[10px] font-medium text-blue-300 backdrop-blur">
             🔍 Click same node again to zoom out
           </div>
