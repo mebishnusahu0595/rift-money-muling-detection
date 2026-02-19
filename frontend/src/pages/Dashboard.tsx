@@ -16,10 +16,30 @@ const Dashboard: React.FC = () => {
   const handleNodeClick = useCallback(
     (nodeId: string) => {
       if (!result) return;
-      const acct = result.suspicious_accounts.find((a) => a.account_id === nodeId) ?? null;
-      setSelectedAccount(acct);
+      // First check suspicious accounts (have full detail)
+      const suspicious = result.suspicious_accounts.find((a) => a.account_id === nodeId);
+      if (suspicious) {
+        setSelectedAccount(suspicious);
+        return;
+      }
+      // Fall back to graph node data for clean/normal accounts
+      const graphNode = graphData?.nodes.find((n) => n.id === nodeId);
+      if (graphNode) {
+        setSelectedAccount({
+          account_id: graphNode.id,
+          suspicion_score: graphNode.suspicion_score,
+          detected_patterns: graphNode.detected_patterns,
+          ring_id: "",
+          account_type: "individual",
+          total_inflow: graphNode.total_inflow,
+          total_outflow: graphNode.total_outflow,
+          transaction_count: graphNode.transaction_count,
+          connected_accounts: [],
+          ring_ids: graphNode.ring_ids,
+        });
+      }
     },
-    [result]
+    [result, graphData]
   );
 
   const handleRingClick = useCallback(
