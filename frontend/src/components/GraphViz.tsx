@@ -10,6 +10,8 @@ interface Props {
   onNodeClick: (nodeId: string) => void;
   /** Optional: zoom graph to a set of node IDs */
   zoomTo?: string[];
+  /** Optional: highlight these node IDs as a fraud ring (red nodes + red edges between them, dim rest) */
+  highlightRingNodes?: string[];
 }
 
 const RING_COLORS = [
@@ -24,7 +26,7 @@ function dataKey(d: GraphData) {
 
 // ── component ──────────────────────────────────────────────────────────────
 
-export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
+export default function GraphViz({ data, onNodeClick, zoomTo, highlightRingNodes }: Props) {
   const cyRef = useRef<Core | null>(null);
   const [showNormal, setShowNormal] = useState(true);
   const [minScore, setMinScore] = useState(0);
@@ -130,6 +132,29 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
       },
       { selector: ".dimmed",      style: { opacity: 0.07 } },
       { selector: ".highlighted", style: { opacity: 1 } },
+      {
+        selector: ".ring-node",
+        style: {
+          "background-color": "#ef4444",
+          "border-color": "#ff0000",
+          "border-width": 3,
+          width: 22,
+          height: 22,
+          opacity: 1,
+          "z-index": 999,
+        },
+      },
+      {
+        selector: ".ring-edge",
+        style: {
+          "line-color": "#ef4444",
+          "target-arrow-color": "#ef4444",
+          "line-style": "solid" as const,
+          width: 3,
+          opacity: 1,
+          "z-index": 998,
+        },
+      },
     ],
     []
   );
@@ -200,6 +225,40 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
     } catch { /* ignore bad selectors */ }
   }, [zoomTo]);
 
+  // ── highlightRingNodes prop — dim all, red-highlight ring members ───────
+  useEffect(() => {
+    const cy = cyRef.current;
+    if (!cy) return;
+
+    // Clear previous ring highlight
+    cy.elements().removeClass("ring-node ring-edge dimmed highlighted");
+
+    if (!highlightRingNodes || highlightRingNodes.length === 0) return;
+
+    const ringSet = new Set(highlightRingNodes);
+    const ringNodeEls = cy.nodes().filter((n) => ringSet.has(n.id()));
+
+    if (ringNodeEls.length === 0) return;
+
+    // Dim everything first
+    cy.elements().addClass("dimmed");
+
+    // Highlight ring member nodes
+    ringNodeEls.removeClass("dimmed").addClass("ring-node");
+
+    // Find and highlight edges between ring members
+    cy.edges().forEach((edge) => {
+      const srcId = edge.source().id();
+      const tgtId = edge.target().id();
+      if (ringSet.has(srcId) && ringSet.has(tgtId)) {
+        edge.removeClass("dimmed").addClass("ring-edge");
+      }
+    });
+
+    // Zoom to ring members
+    cy.animate({ fit: { eles: ringNodeEls, padding: 80 }, duration: 500 } as never);
+  }, [highlightRingNodes]);
+
   // ── cy callback: runs once per mount (key forces remount on new data) ──
   const handleCyReady = useCallback(
     (cy: Core) => {
@@ -239,23 +298,32 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
 
       // Run cose layout — nodes are already in cy, positions will spread correctly
       const nodeCount = cy.nodes().length;
+      const edgeCount = cy.edges().length;
+      // Scale spacing aggressively for large / dense graphs
+      const density = edgeCount / Math.max(nodeCount, 1);
+      const repulsion = Math.max(12000, nodeCount * 3000 + density * 2000);
+      const edgeLen   = Math.max(120, nodeCount * 12);
       cy.layout({
         name: "cose",
         animate: false,
         randomize: true,
-        nodeRepulsion: () => Math.max(8000, nodeCount * 2000),
-        idealEdgeLength: () => Math.max(80, nodeCount * 8),
-        nodeOverlap: 20,
-        gravity: 0.18,
-        numIter: 4000,
-        componentSpacing: 150,
-        padding: 60,
+        nodeRepulsion: () => repulsion,
+        idealEdgeLength: () => edgeLen,
+        nodeOverlap: 40,
+        gravity: 0.08,
+        numIter: 6000,
+        componentSpacing: 250,
+        padding: 80,
+        nestingFactor: 1.2,
       } as never).run();
 
       // Constrain zoom & fit
-      cy.maxZoom(2.0);
-      cy.minZoom(0.2);
+      cy.maxZoom(10.0);   // 1000%
+      cy.minZoom(0.01);   // ~0%
       cy.fit(undefined, 60);
+      // Reset to 100% zoom centered
+      cy.zoom(1.0);
+      cy.center();
 
       // Track zoom level
       const updateZoom = () => setZoomPercent(Math.round(cy.zoom() * 100));

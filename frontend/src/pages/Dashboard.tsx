@@ -67,9 +67,12 @@ const Dashboard: React.FC = () => {
   const lastClickedNodeRef = useRef<string | null>(null);
   const lastClickedRingRef = useRef<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
+  const [sidebarTab, setSidebarTab] = useState<"suspicious" | "rings">("suspicious");
+  const [highlightedRingMembers, setHighlightedRingMembers] = useState<string[] | undefined>(undefined);
+  const highlightedRingIdRef = useRef<string | null>(null);
 
   /* ── Resizable ring section ── */
-  const [ringHeight, setRingHeight] = useState(220);
+  const [ringHeight, setRingHeight] = useState(320);
   const draggingRef = useRef(false);
   const startYRef = useRef(0);
   const startHRef = useRef(0);
@@ -132,6 +135,10 @@ const Dashboard: React.FC = () => {
     (nodeId: string) => {
       if (!result) return;
 
+      // Clear ring highlight when clicking a node
+      setHighlightedRingMembers(undefined);
+      highlightedRingIdRef.current = null;
+
       // Toggle zoom: same node → zoom out; different node → zoom in
       if (lastClickedNodeRef.current === nodeId) {
         lastClickedNodeRef.current = null;
@@ -193,8 +200,31 @@ const Dashboard: React.FC = () => {
       setSelectedAccount(acct);
       lastClickedNodeRef.current = acct.account_id;
       setZoomToNodes([acct.account_id]);
+      setHighlightedRingMembers(undefined);
+      highlightedRingIdRef.current = null;
     },
     []
+  );
+
+  /** Sidebar Fraud Rings tab — click to highlight ring in graph */
+  const handleSidebarRingHighlight = useCallback(
+    (ringId: string) => {
+      if (!result) return;
+      // Toggle — same ring clicked again clears highlight
+      if (highlightedRingIdRef.current === ringId) {
+        highlightedRingIdRef.current = null;
+        setHighlightedRingMembers(undefined);
+        setZoomToNodes([]);
+        return;
+      }
+      const ring = result.fraud_rings.find((r) => r.ring_id === ringId);
+      if (ring && ring.member_accounts.length > 0) {
+        highlightedRingIdRef.current = ringId;
+        setHighlightedRingMembers([...ring.member_accounts]);
+        setSelectedAccount(null);
+      }
+    },
+    [result]
   );
 
   const isAnalysing = uploading || polling;
@@ -380,6 +410,7 @@ const Dashboard: React.FC = () => {
                       data={filteredGraphData}
                       onNodeClick={handleNodeClick}
                       zoomTo={zoomToNodes}
+                      highlightRingNodes={highlightedRingMembers}
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center text-gray-600">Loading graph…</div>
@@ -414,7 +445,7 @@ const Dashboard: React.FC = () => {
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-gray-400">Network Graph</span>
                   {filteredRings.length > 0 && (
                     <span className="rounded-full bg-gray-800 px-1.5 py-0.5 text-[9px] font-bold text-gray-400">
-                      {filteredRings.length}
+                      {filteredRings.length}{result && filteredRings.length < result.summary.fraud_rings_detected ? ` / ${result.summary.fraud_rings_detected}` : ""}
                     </span>
                   )}
                 </div>
@@ -424,19 +455,43 @@ const Dashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* Right sidebar — suspicious accounts + detail */}
+            {/* Right sidebar — suspicious accounts + fraud rings tabs */}
             <aside className="flex w-64 shrink-0 flex-col border-l border-gray-800 bg-[#10161e] overflow-hidden">
-              {/* Header */}
-              <div className="flex shrink-0 items-center justify-between border-b border-gray-800 px-3 py-3">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-yellow-400">
+              {/* Tab Header */}
+              <div className="flex shrink-0 border-b border-gray-800">
+                <button
+                  onClick={() => { setSidebarTab("suspicious"); setHighlightedRingMembers(undefined); highlightedRingIdRef.current = null; }}
+                  className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                    sidebarTab === "suspicious"
+                      ? "border-b-2 border-yellow-400 text-yellow-400"
+                      : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
                   <IconWarn />
-                  <span className="uppercase tracking-wider">Suspicious Accounts</span>
-                </div>
-                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-yellow-500 text-[10px] font-bold text-black">
-                  {suspiciousSorted.length}
-                </span>
+                  <span>Suspicious</span>
+                  <span className={`ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
+                    sidebarTab === "suspicious" ? "bg-yellow-500 text-black" : "bg-gray-700 text-gray-400"
+                  }`}>{suspiciousSorted.length}</span>
+                </button>
+                <button
+                  onClick={() => { setSidebarTab("rings"); setSelectedAccount(null); }}
+                  className={`flex flex-1 items-center justify-center gap-1 px-2 py-2.5 text-[10px] font-semibold uppercase tracking-wider transition-colors ${
+                    sidebarTab === "rings"
+                      ? "border-b-2 border-red-400 text-red-400"
+                      : "text-gray-500 hover:text-gray-300"
+                  }`}
+                >
+                  <IconRing />
+                  <span>Rings</span>
+                  <span className={`ml-0.5 flex h-4 w-4 items-center justify-center rounded-full text-[9px] font-bold ${
+                    sidebarTab === "rings" ? "bg-red-500 text-white" : "bg-gray-700 text-gray-400"
+                  }`}>{filteredRings.length}</span>
+                </button>
               </div>
 
+              {sidebarTab === "suspicious" ? (
+              /* ── SUSPICIOUS ACCOUNTS TAB ── */
+              <>
               {selectedAccount ? (
                 /* ── DETAIL VIEW ── */
                 <div className="flex flex-1 flex-col overflow-y-auto">
@@ -562,7 +617,10 @@ const Dashboard: React.FC = () => {
                 <div className="flex-1 overflow-y-auto">
                   {suspiciousSorted.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-xs text-gray-600">No suspicious accounts</div>
-                  ) : suspiciousSorted.map((acct) => (
+                  ) : suspiciousSorted.map((acct) => {
+                    const acctRingIds = acct.ring_ids?.length ? acct.ring_ids : acct.ring_id ? [acct.ring_id] : [];
+                    const acctRings = result ? result.fraud_rings.filter((r) => acctRingIds.includes(r.ring_id)) : [];
+                    return (
                     <button
                       key={acct.account_id}
                       onClick={() => handleAccountListClick(acct)}
@@ -571,17 +629,80 @@ const Dashboard: React.FC = () => {
                       <ScoreBadge score={acct.suspicion_score} />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-semibold text-gray-100">{acct.account_id}</p>
-                        <p className="truncate text-[10px] text-gray-500">
-                          {acct.ring_ids?.[0] ?? acct.ring_id ?? "—"}
-                          {acct.detected_patterns[0] && (
-                            <span className="ml-1 text-blue-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
-                          )}
-                        </p>
+                        {acctRings.length > 0 ? (
+                          <div className="mt-0.5 flex flex-wrap gap-1">
+                            {acctRings.slice(0, 3).map((ring) => (
+                              <span
+                                key={`${ring.ring_id}_${ring.pattern_type}`}
+                                className={`inline-block rounded-full px-1.5 py-[1px] text-[8px] font-bold leading-tight ${
+                                  ring.risk_score > 30 ? "bg-red-900/60 text-red-300" : ring.risk_score > 12 ? "bg-yellow-900/60 text-yellow-300" : "bg-green-900/60 text-green-300"
+                                }`}
+                              >
+                                {ring.ring_id} · {ring.pattern_type}
+                              </span>
+                            ))}
+                            {acctRings.length > 3 && (
+                              <span className="text-[8px] text-gray-500">+{acctRings.length - 3} more</span>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="truncate text-[10px] text-gray-500">
+                            {acct.detected_patterns[0]
+                              ? <span className="text-blue-400">{acct.detected_patterns[0].replace(/_/g, " ")}</span>
+                              : "—"
+                            }
+                          </p>
+                        )}
                       </div>
                       <IconChevron />
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
+              )}
+              </>
+              ) : (
+              /* ── FRAUD RINGS TAB ── */
+              <div className="flex-1 overflow-y-auto">
+                {filteredRings.length === 0 ? (
+                  <div className="flex h-full items-center justify-center text-xs text-gray-600">No fraud rings detected</div>
+                ) : filteredRings.map((ring) => {
+                  const isActive = highlightedRingIdRef.current === ring.ring_id;
+                  return (
+                    <button
+                      key={`${ring.ring_id}_${ring.pattern_type}`}
+                      onClick={() => handleSidebarRingHighlight(ring.ring_id)}
+                      className={`flex w-full items-start gap-2.5 border-b border-gray-800/60 px-3 py-3 text-left transition-colors ${
+                        isActive ? "bg-red-950/40 border-l-2 border-l-red-500" : "hover:bg-gray-800/60"
+                      }`}
+                    >
+                      {/* Risk badge */}
+                      <div className={`flex h-10 w-10 shrink-0 flex-col items-center justify-center rounded-lg ${
+                        ring.risk_score > 30 ? "bg-red-600" : ring.risk_score > 12 ? "bg-yellow-600" : "bg-green-700"
+                      }`}>
+                        <span className="text-sm font-bold leading-none text-white">{ring.risk_score}</span>
+                        <span className="text-[8px] font-semibold text-white/80">RISK</span>
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-bold text-gray-100">{ring.ring_id}</p>
+                        <p className="mt-0.5 text-[10px] capitalize text-gray-400">{ring.pattern_type.replace(/_/g, " ")}</p>
+                        <div className="mt-1 flex items-center gap-2">
+                          <span className="flex items-center gap-1 rounded-full bg-gray-800 px-1.5 py-0.5 text-[9px] font-medium text-gray-300">
+                            <svg className="h-2.5 w-2.5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z"/></svg>
+                            {ring.member_accounts.length} members
+                          </span>
+                          {isActive && (
+                            <span className="rounded-full bg-red-900/60 px-1.5 py-0.5 text-[9px] font-bold text-red-300">
+                              HIGHLIGHTED
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <IconChevron />
+                    </button>
+                  );
+                })}
+              </div>
               )}
             </aside>
           </div>
