@@ -65,6 +65,8 @@ const Dashboard: React.FC = () => {
   const [minAmount, setMinAmount] = useState(0);
   const [patternFilter, setPatternFilter] = useState("all");
   const [maxNodes, setMaxNodes] = useState(500);
+  const [sliderMaxNodes, setSliderMaxNodes] = useState(500);
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastClickedNodeRef = useRef<string | null>(null);
   const lastClickedRingRef = useRef<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
@@ -363,12 +365,17 @@ const Dashboard: React.FC = () => {
                   min={50}
                   max={Math.max(graphData.nodes.length, 50)}
                   step={50}
-                  value={Math.min(maxNodes, graphData.nodes.length)}
-                  onChange={(e) => setMaxNodes(Number(e.target.value))}
+                  value={Math.min(sliderMaxNodes, graphData.nodes.length)}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    setSliderMaxNodes(v);
+                    if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+                    debounceTimerRef.current = setTimeout(() => setMaxNodes(v), 300);
+                  }}
                   className="w-full accent-blue-500"
                 />
                 <div className="flex items-center justify-between text-[10px] text-gray-500">
-                  <span>{maxNodes >= graphData.nodes.length ? "All" : maxNodes}</span>
+                  <span>{sliderMaxNodes >= graphData.nodes.length ? "All" : sliderMaxNodes}</span>
                   <span>of {graphData.nodes.length}</span>
                 </div>
               </>
@@ -545,11 +552,8 @@ const Dashboard: React.FC = () => {
                 </button>
               </div>
 
-              {sidebarTab === "suspicious" ? (
-              /* ── SUSPICIOUS ACCOUNTS TAB ── */
-              <>
               {selectedAccount ? (
-                /* ── DETAIL VIEW ── */
+                /* ── DETAIL VIEW (visible on any tab) ── */
                 <div className="flex flex-1 flex-col overflow-y-auto">
                   {/* Back button */}
                   <button
@@ -668,8 +672,8 @@ const Dashboard: React.FC = () => {
                     </div>
                   </div>
                 </div>
-              ) : (
-                /* ── LIST VIEW ── */
+              ) : sidebarTab === "suspicious" ? (
+                /* ── SUSPICIOUS LIST VIEW ── */
                 <div className="flex-1 overflow-y-auto">
                   {suspiciousSorted.length === 0 ? (
                     <div className="flex h-full items-center justify-center text-xs text-gray-600">No suspicious accounts</div>
@@ -715,8 +719,6 @@ const Dashboard: React.FC = () => {
                     );
                   })}
                 </div>
-              )}
-              </>
               ) : (
               /* ── FRAUD RINGS TAB ── */
               <div className="flex-1 overflow-y-auto">
