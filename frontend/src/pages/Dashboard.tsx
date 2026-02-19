@@ -80,7 +80,7 @@ const Dashboard: React.FC = () => {
       </header>
 
       {/* Main content */}
-      <main className="mx-auto flex w-full max-w-screen-2xl flex-1 flex-col gap-6 p-6">
+      <main className="mx-auto flex w-full max-w-screen-2xl flex-1 flex-col gap-3 p-4">
         {/* Upload section — shown when no result yet */}
         {!result && (
           <section className="mx-auto w-full max-w-xl">
@@ -120,7 +120,7 @@ const Dashboard: React.FC = () => {
 
         {/* Results */}
         {result && (
-          <>
+          <div className="flex min-h-0 flex-1 flex-col gap-3">
             {/* Summary stats */}
             <section className="grid grid-cols-2 gap-4 sm:grid-cols-4">
               {[
@@ -141,7 +141,7 @@ const Dashboard: React.FC = () => {
                 ],
                 [
                   "Total Volume",
-                  "$" + result.summary.total_transaction_volume.toLocaleString(),
+                  "₹" + result.summary.total_transaction_volume.toLocaleString("en-IN"),
                   "text-green-400",
                 ],
               ].map(([label, value, color]) => (
@@ -155,35 +155,42 @@ const Dashboard: React.FC = () => {
               ))}
             </section>
 
-            {/* Graph — full width */}
-            <section style={{ minHeight: "520px" }} className="flex flex-col">
-              {graphData ? (
-                <GraphViz data={graphData} onNodeClick={handleNodeClick} />
-              ) : (
-                <div className="flex flex-1 items-center justify-center rounded-2xl bg-gray-900/60 text-gray-500">
-                  Loading graph…
-                </div>
-              )}
+        {/* Graph + sidebar side by side — fills remaining viewport height */}
+            <section className="flex flex-1 gap-4" style={{ minHeight: 0, height: "calc(100vh - 280px)" }}>
+              {/* Graph */}
+              <div className="flex min-w-0 flex-1 flex-col">
+                {graphData ? (
+                  <GraphViz data={graphData} onNodeClick={handleNodeClick} />
+                ) : (
+                  <div className="flex flex-1 items-center justify-center rounded-2xl bg-gray-900/60 text-gray-500">
+                    Loading graph…
+                  </div>
+                )}
+              </div>
+
+              {/* Sidebar — account details or placeholder */}
+              <div className="w-72 flex-shrink-0 overflow-y-auto">
+                {selectedAccount ? (
+                  <NodeDetails
+                    account={selectedAccount}
+                    onClose={() => setSelectedAccount(null)}
+                  />
+                ) : (
+                  <div className="flex h-full items-center justify-center rounded-xl border border-dashed border-gray-700 bg-gray-900/30 p-4 text-center text-xs text-gray-500">
+                    Click a node to view details
+                  </div>
+                )}
+              </div>
             </section>
 
-            {/* Node details — full width below graph */}
-            {selectedAccount && (
-              <section>
-                <NodeDetails
-                  account={selectedAccount}
-                  onClose={() => setSelectedAccount(null)}
-                />
-              </section>
-            )}
-
             {/* Ring table */}
-            <section>
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-gray-400">
+            <section className="flex-shrink-0">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-400">
                 Detected Fraud Rings
               </h2>
               <RingTable rings={result.fraud_rings} onRingClick={handleRingClick} />
             </section>
-          </>
+          </div>
         )}
       </main>
 

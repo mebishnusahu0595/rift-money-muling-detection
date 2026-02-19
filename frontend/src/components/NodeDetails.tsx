@@ -103,13 +103,13 @@ const NodeDetails: React.FC<Props> = ({ account, onClose }) => {
           <div className="rounded bg-gray-900/60 p-2">
             <span className="text-gray-400 text-xs">Total Inflow</span>
             <p className="font-medium text-green-400">
-              ${account.total_inflow.toLocaleString()}
+              ₹{account.total_inflow.toLocaleString("en-IN")}
             </p>
           </div>
           <div className="rounded bg-gray-900/60 p-2">
             <span className="text-gray-400 text-xs">Total Outflow</span>
             <p className="font-medium text-red-400">
-              ${account.total_outflow.toLocaleString()}
+              ₹{account.total_outflow.toLocaleString("en-IN")}
             </p>
           </div>
           <div className="rounded bg-gray-900/60 p-2">

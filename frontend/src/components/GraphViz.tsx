@@ -25,17 +25,23 @@ export default function GraphViz({ data, onNodeClick }: Props) {
   const focusedRef = useRef<string | null>(null);
 
   const elements = useMemo(() => {
+    // Person SVG icons encoded as data URIs
+    const iconNormal = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='rgba(255,255,255,0.75)'%3E%3Cpath d='M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z'/%3E%3C/svg%3E";
+    const iconSuspicious = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='rgba(255,255,255,0.9)' d='M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z'/%3E%3Cpolygon fill='%23fbbf24' points='20,2 22,6 18,6'/%3E%3C/svg%3E";
+    const iconHighRisk = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'%3E%3Cpath fill='rgba(255,255,255,0.9)' d='M12 12c2.76 0 5-2.24 5-5s-2.24-5-5-5-5 2.24-5 5 2.24 5 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z'/%3E%3Cpolygon fill='%23ef4444' points='20,1 23,7 17,7'/%3E%3Cline x1='20' y1='3' x2='20' y2='5.2' stroke='white' stroke-width='1.2' stroke-linecap='round'/%3E%3Ccircle cx='20' cy='6.3' r='0.5' fill='white'/%3E%3C/svg%3E";
+
     const nodeEls = data.nodes.map((n: GraphNode) => {
       const score = n.suspicion_score;
-      let color = "#64748b";
-      let size = 20;
-      if (score > 70) { color = "#ef4444"; size = 45; }
-      else if (score > 0) { color = "#f59e0b"; size = 32; }
+      let color = "#3d4a5c";
+      let size = 16;
+      let icon = iconNormal;
+      if (score > 70) { color = "#ef4444"; size = 28; icon = iconHighRisk; }
+      else if (score > 0) { color = "#d97706"; size = 22; icon = iconSuspicious; }
 
       const ringColor =
         n.ring_ids.length > 0
           ? RING_COLORS[parseInt(n.ring_ids[0].replace(/\D/g, ""), 10) % RING_COLORS.length]
-          : undefined;
+          : "transparent";
 
       return {
         data: {
@@ -44,7 +50,8 @@ export default function GraphViz({ data, onNodeClick }: Props) {
           score,
           color,
           size,
-          ringColor: ringColor ?? color,
+          icon,
+          ringColor,
           inflow: n.total_inflow,
           outflow: n.total_outflow,
           isNormal: score === 0,
@@ -58,7 +65,7 @@ export default function GraphViz({ data, onNodeClick }: Props) {
         source: e.source,
         target: e.target,
         amount: e.amount,
-        width: Math.max(1, Math.min(6, e.amount / 2000)),
+        width: Math.max(1, Math.min(5, e.amount / 3000)),
       },
     }));
 
@@ -72,39 +79,43 @@ export default function GraphViz({ data, onNodeClick }: Props) {
         style: {
           label: "data(label)",
           "background-color": "data(color)" as string,
+          "background-image": "data(icon)" as string,
+          "background-fit": "cover" as const,
+          "background-clip": "none" as const,
           width: "data(size)" as unknown as number,
           height: "data(size)" as unknown as number,
-          "font-size": "8px",
-          color: "#e2e8f0",
+          "font-size": "7px",
+          color: "#cbd5e1",
           "text-valign": "bottom" as const,
           "text-halign": "center" as const,
-          "text-margin-y": 4,
+          "text-margin-y": 3,
           "border-width": 2,
           "border-color": "data(ringColor)" as string,
           "text-outline-width": 1,
           "text-outline-color": "#0f0f23",
+          "overlay-opacity": 0,  // no tap flash
         },
       },
       {
         selector: "edge",
         style: {
           width: "data(width)" as unknown as number,
-          "line-color": "#475569",
-          "target-arrow-color": "#475569",
+          "line-color": "#334155",
+          "target-arrow-color": "#334155",
           "target-arrow-shape": "triangle" as const,
           "curve-style": "bezier" as const,
-          opacity: 0.6,
+          opacity: 0.55,
         },
       },
       {
-        selector: "node:active, node:selected",
+        selector: "node:selected",
         style: {
-          "border-width": 4,
+          "border-width": 3,
           "border-color": "#6366f1",
           "overlay-opacity": 0,
         },
       },
-      { selector: ".dimmed",      style: { opacity: 0.08 } },
+      { selector: ".dimmed",      style: { opacity: 0.07 } },
       { selector: ".highlighted", style: { opacity: 1 } },
     ],
     []
@@ -176,8 +187,7 @@ export default function GraphViz({ data, onNodeClick }: Props) {
       const nodeCount = data.nodes.length;
       cy.layout({
         name: "cose",
-        animate: true,
-        animationDuration: 600,
+        animate: false,
         nodeRepulsion: () => Math.max(12000, nodeCount * 2500),
         idealEdgeLength: () => Math.max(130, nodeCount * 18),
         nodeOverlap: 40,
