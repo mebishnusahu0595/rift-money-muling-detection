@@ -53,6 +53,7 @@ USER appuser
 
 ENV PORT=8000
 
+# Railway overrides PORT at runtime; EXPOSE is documentation only
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

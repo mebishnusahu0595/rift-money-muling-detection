@@ -8,7 +8,8 @@ import type {
   UploadResponse,
 } from "../types";
 
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
+// Strip trailing slash so URLs like https://host//api/v1/... never happen
+const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/+$/, "");
 
 interface UseAnalysisState {
   uploading: boolean;
