@@ -47,10 +47,11 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
     const nodeEls = data.nodes.map((n: GraphNode) => {
       const score = n.suspicion_score;
       let color = "#3d4a5c";
-      let size = 15;
+      let size = 12;
       let icon = iconNormal;
-      if (score > 70) { color = "#ef4444"; size = 23; icon = iconHighRisk; }
-      else if (score > 0) { color = "#d97706"; size = 19; icon = iconSuspicious; }
+      if (score > 70) { color = "#ef4444"; size = 18; icon = iconHighRisk; }
+      else if (score > 20) { color = "#d97706"; size = 15; icon = iconSuspicious; }
+      else if (score > 0) { color = "#6b8a3d"; size = 13; icon = iconSuspicious; }
 
       const ringColor =
         n.ring_ids.length > 0
@@ -242,18 +243,18 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
         name: "cose",
         animate: false,
         randomize: true,
-        nodeRepulsion: () => Math.max(6000, nodeCount * 1500),
-        idealEdgeLength: () => Math.max(60, nodeCount * 6),
-        nodeOverlap: 8,
-        gravity: 0.25,
-        numIter: 3000,
-        componentSpacing: 100,
-        padding: 50,
+        nodeRepulsion: () => Math.max(8000, nodeCount * 2000),
+        idealEdgeLength: () => Math.max(80, nodeCount * 8),
+        nodeOverlap: 20,
+        gravity: 0.18,
+        numIter: 4000,
+        componentSpacing: 150,
+        padding: 60,
       } as never).run();
 
       // Constrain zoom & fit
-      cy.maxZoom(2.5);
-      cy.minZoom(0.3);
+      cy.maxZoom(2.0);
+      cy.minZoom(0.2);
       cy.fit(undefined, 60);
 
       // Track zoom level
@@ -307,16 +308,16 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
           <div className="pointer-events-none absolute left-1/2 top-3 z-20 -translate-x-1/2">
             <div className="flex items-center gap-2.5 rounded-xl border border-gray-700/80 bg-gray-900/90 px-4 py-2 shadow-xl backdrop-blur-md">
               <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white ${
-                tappedNode.score > 70 ? "bg-red-600" : tappedNode.score > 40 ? "bg-yellow-600" : "bg-green-700"
+                tappedNode.score > 70 ? "bg-red-600" : tappedNode.score > 20 ? "bg-yellow-600" : "bg-green-700"
               }`}>
                 {tappedNode.score}
               </div>
               <div>
                 <p className="text-sm font-bold tracking-wide text-white">{tappedNode.id}</p>
                 <p className={`text-[10px] font-semibold ${
-                  tappedNode.score > 70 ? "text-red-400" : tappedNode.score > 40 ? "text-yellow-400" : "text-green-400"
+                  tappedNode.score > 70 ? "text-red-400" : tappedNode.score > 20 ? "text-yellow-400" : "text-green-400"
                 }`}>
-                  {tappedNode.score > 70 ? "High Risk" : tappedNode.score > 40 ? "Suspicious" : "Normal"}
+                  {tappedNode.score > 70 ? "High Risk" : tappedNode.score > 20 ? "Suspicious" : "Normal"}
                 </p>
               </div>
             </div>
@@ -340,6 +341,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
       {/* ── Legend ── */}
       <div className="flex flex-wrap items-center gap-3 border-t border-gray-800 bg-gray-900 px-4 py-1.5 text-xs text-gray-500">
         <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-gray-500" /> Normal</span>
+        <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-[#6b8a3d]" /> Low Risk</span>
         <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-amber-400" /> Suspicious</span>
         <span className="flex items-center gap-1"><span className="inline-block h-2 w-2 rounded-full bg-red-500" /> High Risk</span>
         <span className="ml-auto italic text-gray-600">Zoom in for labels · Click node to view details</span>

@@ -46,8 +46,8 @@ const IconNetwork = () => (
 
 // ── score badge ──────────────────────────────────────────────────────────────
 function ScoreBadge({ score }: { score: number }) {
-  const bg = score > 70 ? "bg-red-600" : score > 40 ? "bg-yellow-600" : "bg-green-700";
-  const label = score > 70 ? "HIGH" : score > 40 ? "MED" : "LOW";
+  const bg = score > 70 ? "bg-red-600" : score > 20 ? "bg-yellow-600" : "bg-green-700";
+  const label = score > 70 ? "HIGH" : score > 20 ? "MED" : "LOW";
   return (
     <div className={`flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-lg ${bg}`}>
       <span className="text-sm font-bold leading-none text-white">{score}</span>
@@ -463,7 +463,7 @@ const Dashboard: React.FC = () => {
                     {/* Score bar */}
                     <div className="mt-2 h-1.5 w-full rounded-full bg-gray-800">
                       <div
-                        className={`h-full rounded-full ${selectedAccount.suspicion_score > 70 ? "bg-red-500" : selectedAccount.suspicion_score > 30 ? "bg-yellow-500" : "bg-green-500"}`}
+                        className={`h-full rounded-full ${selectedAccount.suspicion_score > 70 ? "bg-red-500" : selectedAccount.suspicion_score > 20 ? "bg-yellow-500" : "bg-green-500"}`}
                         style={{ width: `${selectedAccount.suspicion_score}%` }}
                       />
                     </div>
@@ -513,7 +513,7 @@ const Dashboard: React.FC = () => {
                                   <td className="px-2 py-1.5 text-center">{ring.member_accounts.length}</td>
                                   <td className="px-2 py-1.5 text-center">
                                     <span className={`inline-block rounded-full px-1.5 py-0.5 text-[9px] font-bold ${
-                                      ring.risk_score > 70 ? "bg-red-600 text-red-100" : ring.risk_score > 40 ? "bg-yellow-600 text-yellow-100" : "bg-green-700 text-green-100"
+                                      ring.risk_score > 30 ? "bg-red-600 text-red-100" : ring.risk_score > 12 ? "bg-yellow-600 text-yellow-100" : "bg-green-700 text-green-100"
                                     }`}>{ring.risk_score}</span>
                                   </td>
                                 </tr>

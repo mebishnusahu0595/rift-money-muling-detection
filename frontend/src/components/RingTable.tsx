@@ -61,8 +61,8 @@ const RingTable: React.FC<Props> = ({ rings, onRingClick }: Props) => {
     sortKey === key ? (sortDir === "asc" ? " ▲" : " ▼") : "";
 
   const riskBadge = (score: number) => {
-    if (score > 70) return "bg-red-600 text-red-100";
-    if (score > 40) return "bg-yellow-600 text-yellow-100";
+    if (score > 30) return "bg-red-600 text-red-100";
+    if (score > 12) return "bg-yellow-600 text-yellow-100";
     return "bg-green-700 text-green-100";
   };
 
