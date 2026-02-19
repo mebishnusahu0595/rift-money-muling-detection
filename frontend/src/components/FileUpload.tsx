@@ -6,7 +6,7 @@ interface Props {
   polling: boolean;
 }
 
-const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling }) => {
+const FileUpload: React.FC<Props> = ({ onUpload, uploading, polling }: Props) => {
   const [dragOver, setDragOver] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);

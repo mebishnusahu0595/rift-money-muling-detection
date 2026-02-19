@@ -31,6 +31,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
   const [focusModeEnabled, setFocusModeEnabled] = useState(false);
   const [isZoomed, setIsZoomed] = useState(false);
   const [tappedNode, setTappedNode] = useState<{ id: string; score: number } | null>(null);
+  const [zoomPercent, setZoomPercent] = useState(100);
   const focusedRef = useRef<string | null>(null);
   const focusModeRef = useRef(false);
   // always-current callback ref — never stale
@@ -254,6 +255,11 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
       cy.maxZoom(2.5);
       cy.minZoom(0.3);
       cy.fit(undefined, 60);
+
+      // Track zoom level
+      const updateZoom = () => setZoomPercent(Math.round(cy.zoom() * 100));
+      updateZoom();
+      cy.on("zoom", updateZoom);
     },
     // elementDefs identity is stable per data (useMemo keyed on data)
     [elementDefs]
@@ -281,15 +287,16 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
             focusModeEnabled ? "bg-indigo-600 text-white" : "bg-gray-700 text-gray-300 hover:bg-gray-600"
           }`}
         >
-          {focusModeEnabled ? "🔍 Focus ON" : "🔍 Focus Mode"}
+          {focusModeEnabled ? "Focus ON" : "Focus Mode"}
         </button>
-        <div className="ml-auto flex gap-1.5">
+        <div className="ml-auto flex items-center gap-1.5">
+          <span className="rounded bg-gray-800 px-2 py-0.5 font-mono text-[11px] text-gray-400 tabular-nums">{zoomPercent}%</span>
           <button onClick={() => { cyRef.current?.fit(undefined, 30); setIsZoomed(false); }}
             className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">Fit</button>
           <button onClick={() => cyRef.current?.zoom((cyRef.current?.zoom() ?? 1) * 1.3)}
             className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">+</button>
           <button onClick={() => cyRef.current?.zoom((cyRef.current?.zoom() ?? 1) / 1.3)}
-            className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">−</button>
+            className="rounded bg-gray-700 px-2 py-0.5 text-gray-200 hover:bg-gray-600">-</button>
         </div>
       </div>
 
@@ -317,7 +324,7 @@ export default function GraphViz({ data, onNodeClick, zoomTo }: Props) {
         )}
         {isZoomed && !tappedNode && (
           <div className="pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-full bg-black/60 px-3 py-1 text-[10px] font-medium text-blue-300 backdrop-blur">
-            🔍 Click same node again to zoom out
+            Click same node again to zoom out
           </div>
         )}
         <CytoscapeComponent

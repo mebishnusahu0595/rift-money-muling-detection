@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useMemo } from "react";
+import React, { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import FileUpload from "../components/FileUpload";
 import GraphViz from "../components/GraphViz";
 import RingTable from "../components/RingTable";
@@ -67,6 +67,28 @@ const Dashboard: React.FC = () => {
   const lastClickedNodeRef = useRef<string | null>(null);
   const lastClickedRingRef = useRef<string | null>(null);
   const [showWelcome, setShowWelcome] = useState(true);
+
+  /* ── Resizable ring section ── */
+  const [ringHeight, setRingHeight] = useState(220);
+  const draggingRef = useRef(false);
+  const startYRef = useRef(0);
+  const startHRef = useRef(0);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      if (!draggingRef.current) return;
+      // dragging UP ⇒ larger ring section
+      const delta = startYRef.current - e.clientY;
+      setRingHeight(Math.max(100, Math.min(600, startHRef.current + delta)));
+    };
+    const onUp = () => { draggingRef.current = false; };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
 
   /* ── Filtered graph data based on sidebar filters ── */
   const filteredGraphData = useMemo(() => {
@@ -177,9 +199,19 @@ const Dashboard: React.FC = () => {
 
   const isAnalysing = uploading || polling;
 
-  const filteredRings = result?.fraud_rings.filter(
-    (r) => patternFilter === "all" || r.pattern_type === patternFilter
-  ) ?? [];
+  const filteredRings = useMemo(() => {
+    const raw =
+      result?.fraud_rings.filter(
+        (r) => patternFilter === "all" || r.pattern_type === patternFilter
+      ) ?? [];
+    const seen = new Set<string>();
+    return raw.filter((r) => {
+      const key = `${r.ring_id}__${r.pattern_type}`;
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [result, patternFilter]);
 
   const patternTypes = result
     ? Array.from(new Set(result.fraud_rings.map((r) => r.pattern_type)))
@@ -355,8 +387,26 @@ const Dashboard: React.FC = () => {
                 </div>
               </div>
 
-              {/* Ring table */}
-              <div className="shrink-0 flex flex-col" style={{ maxHeight: "18rem" }}>
+              {/* Ring table -- resizable */}
+              <div className="relative shrink-0 flex flex-col" style={{ height: `${ringHeight}px` }}>
+                {/* drag handle */}
+                <div
+                  onMouseDown={(e) => {
+                    draggingRef.current = true;
+                    startYRef.current = e.clientY;
+                    startHRef.current = ringHeight;
+                  }}
+                  className="absolute -top-2 left-0 right-0 z-20 flex h-4 cursor-ns-resize items-center justify-center group"
+                  title="Drag to resize"
+                >
+                  <span className="flex items-center gap-[3px] rounded-full bg-gray-700/80 px-3 py-[2px] transition-colors group-hover:bg-blue-600/80">
+                    <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
+                    <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
+                    <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
+                    <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
+                    <span className="h-[3px] w-[3px] rounded-full bg-gray-400 group-hover:bg-white" />
+                  </span>
+                </div>
                 <div className="mb-2 flex items-center gap-2 shrink-0">
                   <svg className="h-3.5 w-3.5 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z"/>
@@ -527,10 +577,10 @@ const Dashboard: React.FC = () => {
                 suspicious accounts using advanced network analysis and graph-based detection.
               </p>
               <div className="mb-6 flex flex-wrap justify-center gap-2">
-                <span className="rounded-full border border-blue-800/50 bg-blue-900/30 px-3 py-1 text-[11px] text-blue-300">🔍 Pattern Detection</span>
-                <span className="rounded-full border border-purple-800/50 bg-purple-900/30 px-3 py-1 text-[11px] text-purple-300">🕸️ Network Analysis</span>
-                <span className="rounded-full border border-yellow-800/50 bg-yellow-900/30 px-3 py-1 text-[11px] text-yellow-300">⚠️ Risk Scoring</span>
-                <span className="rounded-full border border-green-800/50 bg-green-900/30 px-3 py-1 text-[11px] text-green-300">📊 Visual Analytics</span>
+                <span className="rounded-full border border-blue-800/50 bg-blue-900/30 px-3 py-1 text-[11px] text-blue-300">Pattern Detection</span>
+                <span className="rounded-full border border-purple-800/50 bg-purple-900/30 px-3 py-1 text-[11px] text-purple-300">Network Analysis</span>
+                <span className="rounded-full border border-yellow-800/50 bg-yellow-900/30 px-3 py-1 text-[11px] text-yellow-300">Risk Scoring</span>
+                <span className="rounded-full border border-green-800/50 bg-green-900/30 px-3 py-1 text-[11px] text-green-300">Visual Analytics</span>
               </div>
               <button
                 onClick={() => setShowWelcome(false)}

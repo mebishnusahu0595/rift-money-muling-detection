@@ -6,7 +6,7 @@ interface Props {
   disabled?: boolean;
 }
 
-const JsonDownload: React.FC<Props> = ({ analysisId, onDownload, disabled }) => {
+const JsonDownload: React.FC<Props> = ({ analysisId, onDownload, disabled }: Props) => {
   return (
     <button
       onClick={onDownload}

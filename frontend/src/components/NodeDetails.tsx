@@ -6,7 +6,7 @@ interface Props {
   onClose: () => void;
 }
 
-const NodeDetails: React.FC<Props> = ({ account, onClose }) => {
+const NodeDetails: React.FC<Props> = ({ account, onClose }: Props) => {
   if (!account) return null;
 
   const scoreBg =
@@ -35,7 +35,7 @@ const NodeDetails: React.FC<Props> = ({ account, onClose }) => {
       <div className="mb-2 flex flex-wrap gap-1">
         {account.detected_patterns.length === 0
           ? <span className="text-gray-600">No patterns</span>
-          : account.detected_patterns.map((p, i) => (
+          : account.detected_patterns.map((p: string, i: number) => (
             <span key={i} className="rounded-full bg-red-900/40 border border-red-800/50 px-2 py-0.5 text-[10px] text-red-300">
               {p.replace(/_/g, " ")}
             </span>
@@ -46,7 +46,7 @@ const NodeDetails: React.FC<Props> = ({ account, onClose }) => {
       {/* Rings */}
       {account.ring_ids.length > 0 && (
         <div className="mb-2 flex flex-wrap gap-1">
-          {account.ring_ids.map((r) => (
+          {account.ring_ids.map((r: string) => (
             <span key={r} className="rounded-full bg-blue-900/40 border border-blue-800/50 px-2 py-0.5 text-[10px] text-blue-300">{r}</span>
           ))}
         </div>
