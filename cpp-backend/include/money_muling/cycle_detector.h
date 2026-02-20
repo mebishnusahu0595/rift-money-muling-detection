@@ -32,7 +32,7 @@ public:
     static constexpr int    DEFAULT_MAX_LENGTH   = 5;
     static constexpr double DEFAULT_WINDOW_HRS   = 72.0;
     // Max DFS frames per root node — prevents O(∞) on dense graphs
-    static constexpr int    MAX_FRAMES_PER_ROOT  = 30000;
+    static constexpr int    MAX_FRAMES_PER_ROOT  = 5000;
 
     /**
      * Find all simple cycles of length 3..max_length that are temporally

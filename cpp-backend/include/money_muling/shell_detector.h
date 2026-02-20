@@ -22,7 +22,7 @@ namespace mm {
 
 class ShellDetector {
 public:
-    static constexpr int MAX_PATHS                     = 2000;
+    static constexpr int MAX_PATHS                     = 100;
     static constexpr int DEFAULT_MAX_INTERMEDIATE_TXNS = 3;
     static constexpr int DEFAULT_MIN_CHAIN_LENGTH      = 3;
     static constexpr int DEFAULT_MAX_CHAIN_LENGTH      = 6;
@@ -97,7 +97,7 @@ public:
                 stack.pop_back();
 
                 if ((int)path.size() > max_chain_length + 1) continue;
-                if (paths_from_source > 200) break; // safety cap per source
+                if (paths_from_source > 20) break; // safety cap per source
 
                 for (const auto& next : graph.successors(curr)) {
                     // Check if already in path (simple path)
