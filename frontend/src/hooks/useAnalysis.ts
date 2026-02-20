@@ -57,7 +57,12 @@ export function useAnalysis() {
 
         const { data } = await axios.post<UploadResponse>(
           `${API_BASE}/api/v1/analyze`,
-          form
+          form,
+          {
+            headers: {
+              "Content-Type": "multipart/form-data",
+            },
+          }
         );
 
         const id = data.analysis_id;
