@@ -184,7 +184,7 @@ inline json download_summary_to_json(const Summary& s) {
         {"total_accounts_analyzed",     s.total_accounts_analyzed},
         {"suspicious_accounts_flagged", s.suspicious_accounts_flagged},
         {"fraud_rings_detected",        s.fraud_rings_detected},
-        {"processing_time_seconds",     s.processing_time_seconds}
+        {"processing_time_seconds",     std::round(s.processing_time_seconds * 1000.0) / 1000.0}
     };
 }
 
