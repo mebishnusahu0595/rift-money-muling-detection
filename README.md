@@ -35,21 +35,21 @@
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     React Frontend (Vite)                     │
+│                     React Frontend (Vite)                    │
 │                                                              │
-│   Dashboard.tsx → useAnalysis.ts → Axios → REST API         │
+│   Dashboard.tsx → useAnalysis.ts → Axios → REST API          │
 │        ↓                                                     │
-│   GraphViz.tsx (Cytoscape.js)  ←  Graph JSON Response       │
+│   GraphViz.tsx (Cytoscape.js)  ←  Graph JSON Response        │
 └──────────────────────────┬───────────────────────────────────┘
                            │ HTTP (multipart/form-data upload)
                            ▼
-┌──────────────────────────────────────────────────────────────┐
-│               C++ Backend (Crow HTTP, port 8000)             │
-│                                                              │
+┌─────────────────────────────────────────────────────────────┐
+│               C++ Backend (Crow HTTP, port 8000)            │
+│                                                             │
 │  POST /api/v1/analyze  →  AnalysisEngine::run()             │
 │                                ↓                            │
 │          ┌─────────────────────────────────────┐            │
-│          │         Analysis Pipeline            │            │
+│          │         Analysis Pipeline           │            │
 │          │                                     │            │
 │          │  1. CSV Parser                      │            │
 │          │  2. TransactionGraph (adjacency)    │            │
@@ -63,11 +63,11 @@
 │          │  7. FraudRing Assembler             │            │
 │          │  8. GraphData Builder               │            │
 │          └─────────────────────────────────────┘            │
-│                                                              │
+│                                                             │
 │  GET /api/v1/analysis/{id}      → Poll status               │
 │  GET /api/v1/analysis/{id}/download → JSON report           │
 │  GET /api/v1/analysis/{id}/graph    → Graph viz data        │
-└──────────────────────────────────────────────────────────────┘
+└─────────────────────────────────────────────────────────────┘
 ```
 
 ---
